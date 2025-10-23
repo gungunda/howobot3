@@ -32,4 +32,4 @@ js/ui/events.js
 js/ui/helpers.js
 js/utils/date-utils.js
 js/utils/format-utils.js
-js/tests/entities.test.js
+js/tests/entities.test.js
