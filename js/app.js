@@ -1,14 +1,14 @@
-"use strict";
+// js/app.js
+// Точка входа: инициализация и первый рендер «Дня».
 
-/**
- * Точка входа приложения.
- * Здесь создаём singletons репозиториев (по умолчанию — локальные адаптеры).
- * Use Cases будут импортировать их напрямую (Dependency Access Policy).
- */
+import rehydrateApp from "./usecases/rehydrateApp.js";
+import renderDashboard from "./ui/render-dashboard.js";
+import { todayKey } from "./ui/helpers.js";
 
-export { scheduleRepo } from "./adapters/local/schedule.repo.local.js";
-export { overrideRepo } from "./adapters/local/override.repo.local.js";
+window.addEventListener("DOMContentLoaded", async () => {
+  // 1) Подтягиваем данные (schedule) в состояние
+  await rehydrateApp();
 
-// Простейшая инициализация DOM (заглушка — чтобы страница жила без ошибок).
-const elTotal = document.getElementById("stat-total");
-if (elTotal) elTotal.textContent = "—";
+  // 2) Рендерим «День» на сегодня
+  await renderDashboard(todayKey());
+});
