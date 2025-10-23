@@ -1,14 +1,10 @@
 // js/app.js
-// Точка входа: инициализация и первый рендер «Дня».
+// Точка входа: инициализация данных и UI (календарь + список).
 
 import rehydrateApp from "./usecases/rehydrateApp.js";
-import renderDashboard from "./ui/render-dashboard.js";
-import { todayKey } from "./ui/helpers.js";
+import initUI from "./ui/events.js";
 
 window.addEventListener("DOMContentLoaded", async () => {
-  // 1) Подтягиваем данные (schedule) в состояние
   await rehydrateApp();
-
-  // 2) Рендерим «День» на сегодня
-  await renderDashboard(todayKey());
+  await initUI();
 });

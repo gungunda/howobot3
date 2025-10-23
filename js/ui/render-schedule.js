@@ -1,11 +1,9 @@
 // js/ui/render-schedule.js
-// Рисуем список задач простыми div-элементами.
-// На данном шаге — без редактирования, только вывод.
+// Список задач с чекбоксом done, процентными кнопками и кнопкой "Сбросить день".
 
 import { clear } from "./helpers.js";
 
 export function renderSchedule(root, { dateKey, tasks }) {
-  // root — это DOM-элемент-контейнер. Если не передали — создадим #schedule внутри #app.
   if (!root) {
     root = document.getElementById("schedule");
     if (!root) {
@@ -20,7 +18,12 @@ export function renderSchedule(root, { dateKey, tasks }) {
 
   const header = document.createElement("div");
   header.className = "schedule-header";
-  header.textContent = `Задачи на ${dateKey}`;
+  header.innerHTML = `
+    <div class="schedule-title">Задачи на ${dateKey}</div>
+    <div class="schedule-actions">
+      <button id="reset-day-btn" type="button">Сбросить день</button>
+    </div>
+  `;
   root.appendChild(header);
 
   const list = document.createElement("div");
@@ -32,19 +35,51 @@ export function renderSchedule(root, { dateKey, tasks }) {
     empty.className = "task-empty";
     empty.textContent = "Нет задач на этот день";
     list.appendChild(empty);
+    root.dataset.dateKey = dateKey;
     return root;
   }
 
   for (const t of tasks) {
     const item = document.createElement("div");
     item.className = "task-item";
-    // Читаемый формат: [минуты] Название (✓ если done)
-    const done = t.done ? "✓ " : "";
-    const minutes = (typeof t.minutes === "number") ? `[${t.minutes} мин] ` : "";
-    item.textContent = `${done}${minutes}${t.title || "Без названия"}`;
+    item.dataset.taskId = t.id ?? "";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "task-done";
+    checkbox.checked = !!t.done || (t.donePercent >= 100);
+
+    const title = document.createElement("span");
+    title.className = "task-title";
+    const pct = typeof t.donePercent === "number" ? `(${t.donePercent}%) ` : "";
+    title.textContent = `${pct}${t.title || "Без названия"}`;
+
+    const controls = document.createElement("span");
+    controls.className = "task-controls";
+    const minus = document.createElement("button");
+    minus.className = "task-pct-minus";
+    minus.type = "button";
+    minus.textContent = "−10%";
+    const plus = document.createElement("button");
+    plus.className = "task-pct-plus";
+    plus.type = "button";
+    plus.textContent = "+10%";
+    const editBtn = document.createElement("button");
+    editBtn.className = "task-edit";
+    editBtn.type = "button";
+    editBtn.textContent = "✎";
+
+    controls.appendChild(minus);
+    controls.appendChild(plus);
+    controls.appendChild(editBtn);
+
+    item.appendChild(checkbox);
+    item.appendChild(title);
+    item.appendChild(controls);
     list.appendChild(item);
   }
 
+  root.dataset.dateKey = dateKey;
   return root;
 }
 

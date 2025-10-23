@@ -1,27 +1,31 @@
 // js/domain/entities.js
-// Исправленные классы Task и DayOverride (клиппинг и строковый dateKey)
+// Task без устаревшего поля progress. Основная метрика — donePercent (0..100).
 
 export class Task {
-  constructor({ id, title, minutes = 0, done = false, progress = 0 } = {}) {
+  constructor({ id, title, minutes = 0, done = false, donePercent = 0, meta = null } = {}) {
     this.id = String(id ?? "");
     this.title = String(title ?? "");
     this.minutes = Math.max(0, Number(minutes) || 0);
-    this.done = !!done;
-    this.progress = Math.min(this.minutes, Math.max(0, Number(progress) || 0));
+    // Проценты — главный индикатор
+    this.donePercent = Math.max(0, Math.min(100, Math.round(Number(donePercent) || 0)));
+    this.done = !!(done || this.donePercent >= 100);
+    this.meta = meta && typeof meta === "object" ? meta : null;
   }
-  increaseProgress(n = 0) {
-    this.progress = Math.min(this.minutes, this.progress + (Number(n) || 0));
+  setDonePercent(p) {
+    this.donePercent = Math.max(0, Math.min(100, Math.round(Number(p) || 0)));
+    this.done = this.donePercent >= 100;
   }
-  decreaseProgress(n = 0) {
-    this.progress = Math.max(0, this.progress - (Number(n) || 0));
-  }
+  increasePercent(delta = 0) { this.setDonePercent(this.donePercent + (Number(delta) || 0)); }
+  decreasePercent(delta = 0) { this.setDonePercent(this.donePercent - (Number(delta) || 0)); }
+
   toJSON() {
     return {
       id: this.id,
       title: this.title,
       minutes: this.minutes,
       done: this.done,
-      progress: this.progress
+      donePercent: this.donePercent,
+      meta: this.meta
     };
   }
   static fromJSON(j = {}) { return new Task(j); }
@@ -29,17 +33,17 @@ export class Task {
 
 export class Schedule {
   constructor(obj = {}) {
-    const blank = {
-      monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: []
-    };
+    const blank = { monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] };
+    const src = obj || {};
     for (const k of Object.keys(blank)) {
-      this[k] = Array.isArray(obj[k]) ? obj[k] : [];
+      const arr = Array.isArray(src[k]) ? src[k] : [];
+      this[k] = arr.map(t => (typeof t === "object" ? new Task(t) : t));
     }
   }
   toJSON() {
     const out = {};
     for (const k of ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]) {
-      out[k] = Array.isArray(this[k]) ? this[k] : [];
+      out[k] = (this[k] || []).map(t => (typeof t?.toJSON === "function" ? t.toJSON() : t));
     }
     return out;
   }
@@ -49,9 +53,9 @@ export class Schedule {
 export class DayOverride {
   constructor({ dateKey, tasks = [] } = {}) {
     this.dateKey = String(dateKey ?? "");
-    this.tasks   = Array.isArray(tasks) ? tasks : [];
+    this.tasks   = Array.isArray(tasks) ? tasks.map(t => (typeof t === "object" ? new Task(t) : t)) : [];
   }
-  toJSON() { return { dateKey: this.dateKey, tasks: this.tasks }; }
+  toJSON() { return { dateKey: this.dateKey, tasks: this.tasks.map(t => (t?.toJSON ? t.toJSON() : t)) }; }
   static fromJSON(j = {}) { return new DayOverride(j); }
 }
 

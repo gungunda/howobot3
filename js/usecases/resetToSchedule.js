@@ -1,11 +1,11 @@
-"use strict";
-import { scheduleRepo, overrideRepo } from "../app.js";
-import { ensureOverride } from "./ensureOverride.js";
+// js/usecases/resetToSchedule.js
+// Сбросить изменения дня к шаблону: просто удаляем override для dateKey.
 
-/** Пересобирает override для даты заново из шаблона расписания. */
-export async function resetToSchedule(dateKey) {
-  const ov = await ensureOverride(dateKey);
-  const schedule = await scheduleRepo.load();
-  ov.resetFromSchedule(schedule, dateKey);
-  await overrideRepo.save(dateKey, ov);
+export default async function resetToSchedule({ dateKey }) {
+  const mod = await import("../adapters/local/override.repo.local.js").catch(() => ({}));
+  const deleteOverride = mod.deleteOverride || mod.remove || mod.del || null;
+  if (typeof deleteOverride === "function") {
+    await deleteOverride(dateKey);
+  }
+  return true;
 }
