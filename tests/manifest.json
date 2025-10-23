@@ -1,11 +1,12 @@
-﻿[
-    "tests/entities.test.js",
-    "tests/mocks/app.test.js",
-    "tests/units/entities.datekey.test.js",
-    "tests/units/entities.dayoverride.test.js",
-    "tests/units/entities.meta_id.test.js",
-    "tests/units/entities.schedule.test.js",
-    "tests/units/entities.task.test.js",
-    "tests/units/usecases.editTaskInline.test.js",
-    "tests/units/usecases.getTasksForDate.test.js"
+[
+  "./units/entities.task.test.js",
+  "./units/entities.schedule.test.js",
+  "./units/entities.dayoverride.test.js",
+  "./units/entities.datekey.test.js",
+  "./units/entities.meta_id.test.js",
+  "./units/usecases.getSchedule.test.js",
+  "./units/usecases.add_edit_delete_schedule.test.js",
+  "./units/usecases.getTasksForDate_and_overrides.test.js",
+  "./units/usecases.inline_day_ops.test.js",
+  "./units/usecases.compute_rehydrate_sync_gc.test.js"
 ]
