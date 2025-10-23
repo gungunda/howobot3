@@ -2,48 +2,41 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Лёшин планировщик — Тесты</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Howobot3 — Tests</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 16px; line-height: 1.4; }
-    .ok { color: #0a7f2e; }
-    .fail { color: #b00020; white-space: pre-wrap; }
-    pre { background: #f6f8fa; padding: 12px; border-radius: 8px; max-width: 980px; overflow:auto; }
-    .summary { margin-top: 12px; font-weight: 600; }
-    button { padding: 8px 12px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; }
+    body { font: 14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px; }
+    #controls { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
+    button { padding: 6px 10px; }
+    #results { margin-top: 12px; }
+    .hint { color: #666; }
+    .note { background: #f5faff; border: 1px solid #dbeafe; padding: 8px; border-radius: 6px; }
   </style>
-
-  <!-- import map: подменяем /js/app.js на тестовую реализацию -->
-  <script type="importmap">
-  {
-    "imports": {
-      "/js/app.js": "/tests/mocks/app.test.js"
-    }
-  }
-  </script>
 </head>
 <body>
-  <h1>Лёшин планировщик — Тесты</h1>
-  <button id="run">Run tests</button>
-  <div id="out"></div>
+  <h1>Howobot3 — тесты</h1>
+
+  <div id="controls">
+    <button id="run">Run tests</button>
+    <span class="hint">Список тестов берётся из <code>tests/manifest.json</code> или из блока ниже.</span>
+  </div>
+
+  <!-- Inline JSON-манифест (резервный путь). Можно редактировать в браузере во время разработки. -->
+  <script type="application/json" id="tests-list">
+  [
+    "tests/entities.test.js"
+    // Пример: "tests/units/entities.task.test.js",
+    //         "tests/units/usecases.getSchedule.test.js"
+  ]
+  </script>
+
+  <div id="results" class="note">Нажми «Run tests»</div>
 
   <script type="module">
-    import { runAllTests } from "./test-suite.js";
-
-    const btn = document.getElementById('run');
-    const out = document.getElementById('out');
-
-    btn.onclick = async () => {
-      out.innerHTML = "";
-      try {
-        const report = await runAllTests();
-        out.appendChild(report);
-      } catch (e) {
-        const pre = document.createElement('pre');
-        pre.className = "fail";
-        pre.textContent = "Runner crashed:\n" + (e?.stack || e);
-        out.appendChild(pre);
-      }
-    };
+    import { runAllTests } from './test-suite.js';
+    document.getElementById('run').addEventListener('click', runAllTests);
+    // Автозапуск, если есть #auto
+    if (location.hash === '#auto') runAllTests();
   </script>
 </body>
 </html>

@@ -1,35 +1,10 @@
+# FILES_WHITELIST.txt (v10)
+# Можно указывать файлы, директории или шаблоны dir/* (все файлы рекурсивно)
 index.html
-assets/styles.css
-js/app.js
-js/domain/entities.js
-js/domain/id.js
-js/ports/schedule-repo.port.js
-js/ports/override-repo.port.js
-js/adapters/local/schedule.repo.local.js
-js/adapters/local/override.repo.local.js
-js/adapters/cloud/schedule.repo.cloud.js
-js/adapters/cloud/override.repo.cloud.js
-js/adapters/smart/smart.schedule.repo.js
-js/adapters/smart/smart.override.repo.js
-js/usecases/getTasksForDate.js
-js/usecases/editTaskInline.js
-js/usecases/deleteTaskForDate.js
-js/usecases/clearAllTasksForDate.js
-js/usecases/resetToSchedule.js
-js/usecases/computeDayStats.js
-js/usecases/getSchedule.js
-js/usecases/addTaskToSchedule.js
-js/usecases/editTaskInSchedule.js
-js/usecases/deleteTaskFromSchedule.js
-js/usecases/rehydrateApp.js
-js/usecases/syncNow.js
-js/usecases/setupSyncTriggers.js
-js/usecases/gcOldDates.js
-js/ui/render-dashboard.js
-js/ui/render-schedule.js
-js/ui/render-calendar.js
-js/ui/events.js
-js/ui/helpers.js
-js/utils/date-utils.js
-js/utils/format-utils.js
-js/tests/entities.test.js
+assets
+js
+tests
+# либо так:
+# assets/*
+# js/*
+# tests/*

@@ -1,0 +1,11 @@
+﻿[
+    "tests/entities.test.js",
+    "tests/mocks/app.test.js",
+    "tests/units/entities.datekey.test.js",
+    "tests/units/entities.dayoverride.test.js",
+    "tests/units/entities.meta_id.test.js",
+    "tests/units/entities.schedule.test.js",
+    "tests/units/entities.task.test.js",
+    "tests/units/usecases.editTaskInline.test.js",
+    "tests/units/usecases.getTasksForDate.test.js"
+]
