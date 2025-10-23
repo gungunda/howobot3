@@ -1,33 +1,23 @@
-<!DOCTYPE html>
+
+<!doctype html>
 <html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Лёшин планировщик — скелет проекта</title>
-    <link rel="stylesheet" href="./assets/styles.css" />
-  </head>
-  <body>
-    <main class="dashboard">
-      <h1>Лёшин планировщик — стартовый каркас</h1>
-      <p>Это минимальная заготовка под Clean Architecture. Дальше будем наполнять кодом.</p>
-
-      <section class="stats" aria-label="Показатели">
-        <div class="stat"><span>Общая нагрузка</span><strong id="stat-total">—</strong></div>
-        <div class="stat"><span>Выполнено</span><strong id="stat-done">—</strong></div>
-        <div class="stat"><span>Осталось</span><strong id="stat-left">—</strong></div>
-        <div class="stat"><span>Финиш-оценка</span><strong id="stat-eta">—</strong></div>
-      </section>
-
-      <nav class="dashboard__nav" aria-label="Навигация">
-        <button id="btn-today" class="btn">Сегодня</button>
-        <button id="btn-schedule" class="btn">Расписание</button>
-        <button id="btn-calendar" class="btn">Календарь</button>
-      </nav>
-
-      <section id="app-root"></section>
-    </main>
-
-    <!-- Для ES-модулей указываем type="module". Все зависимости тянут друг друга через import -->
-    <script type="module" src="./js/app.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Study Planner</title>
+  <link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">💡 Study Planner</div>
+    <nav class="nav">
+      <button id="tab-day" class="tab active">Расписание</button>
+      <input id="date-input" type="date" />
+      <button id="today-btn">Сегодня</button>
+      <button id="tab-week" class="tab">Неделя</button>
+    </nav>
+  </header>
+  <main id="app"></main>
+  <script type="module" src="./js/app.js"></script>
+</body>
 </html>

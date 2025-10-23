@@ -1,76 +1,68 @@
 // js/usecases/editTaskInline.js
-// Робастная реализация первого редактирования:
-// - если override отсутствует — создаём его;
-// - ищем задачу по taskId в override, затем в шаблоне недели;
-// - если не нашли — берём первую задачу дня недели (если есть);
-// - применяем patch;
-// - всегда возвращаем массив задач (не null).
+// D+1-совместимая логика: редактирование на дату D клонирует задачу из шаблона недели D+1.
+// Если в шаблоне не нашли — создаём минимальную задачу прямо в override, чтобы он не оставался пустым.
 
-function parseDateKey(key) {
-  return typeof key === "string" && key ? key : (new Date()).toISOString().slice(0,10);
+function addDaysToDateKey(dateKey, days){
+  const d = new Date(`${dateKey}T00:00:00`);
+  d.setDate(d.getDate() + Number(days||0));
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
 }
-function weekdayFromDateKey(key) {
-  const [y,m,d] = key.split("-").map(Number);
-  const dt = new Date(y, (m||1)-1, d||1);
-  const i = dt.getDay(); // 0..6
-  const map = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
-  return map[i] || "monday";
+function weekdayKeyFromDateKey(dateKey){
+  const d = new Date(`${dateKey}T00:00:00`);
+  const map=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+  return map[d.getDay()] || 'monday';
 }
 
-export default async function editTaskInline({ dateKey, taskId, patch }) {
-  const key = parseDateKey(dateKey);
-  const overrideRepo = await import("../adapters/local/override.repo.local.js").catch(() => ({}));
-  const scheduleRepo = await import("../adapters/local/schedule.repo.local.js").catch(() => ({}));
+export default async function editTaskInline({ dateKey, taskId, patch }){
+  const ovRepo = await import("../adapters/smart/smart.override.repo.js");
+  const schRepo = await import("../adapters/smart/smart.schedule.repo.js");
+  const loadOv = ovRepo.loadOverride || ovRepo.load;
+  const saveOv = ovRepo.saveOverride || ovRepo.save;
+  const loadS  = schRepo.loadSchedule || schRepo.load;
 
-  const loadOverride = overrideRepo.loadOverride || overrideRepo.load;
-  const saveOverride = overrideRepo.saveOverride || overrideRepo.save;
-  const loadSchedule = scheduleRepo.loadSchedule || scheduleRepo.load;
+  let ov = await loadOv(dateKey);
+  if(!ov) ov = { dateKey, tasks: [] };
+  if(!Array.isArray(ov.tasks)) ov.tasks = [];
 
-  const wd = weekdayFromDateKey(key);
-  const schedule = (typeof loadSchedule === "function") ? await loadSchedule() : null;
-  let ov = (typeof loadOverride === "function") ? await loadOverride(key) : null;
+  // 1) ищем уже отредактированную задачу в override
+  let t = ov.tasks.find(x=>x.id===taskId);
 
-  if (!ov || typeof ov !== "object") ov = { dateKey: key, tasks: [] };
-  if (!Array.isArray(ov.tasks)) ov.tasks = [];
-
-  // 1) Пытаемся найти задачу в override
-  let t = ov.tasks.find(x => x && x.id === taskId);
-
-  // 2) Если нет — ищем в недельном шаблоне по id
-  if (!t && schedule && Array.isArray(schedule[wd])) {
-    const fromWeek = schedule[wd];
-    let src = null;
-    if (taskId != null) {
-      src = fromWeek.find(x => x && x.id === taskId) || null;
-    }
-    // 3) Если id не нашли — мягкий фоллбек: берём первую задачу дня (если есть)
-    if (!src && fromWeek.length > 0) {
-      src = fromWeek[0];
-    }
+  // 2) если нет — ищем в шаблоне Д+1
+  if(!t){
+    const nextDateKey = addDaysToDateKey(dateKey, 1);
+    const wd = weekdayKeyFromDateKey(nextDateKey); // завтрашний weekday
+    const s = await loadS();
+    const src = (s?.[wd]||[]).find(x=>x.id===taskId);
     if (src) {
       t = { ...src };
+      if (typeof t.donePercent !== 'number') t.donePercent = 0;
+      t.done = t.donePercent >= 100;
       ov.tasks.push(t);
     }
   }
 
-  // Если так и не нашли/создали — просто вернём текущий список (пустой массив тоже ок для тестов)
-  if (!t) {
-    // Сохраняем пустой/текущий override, если можно
-    if (typeof saveOverride === "function") {
-      try { await saveOverride(ov); } catch {}
-    }
-    return ov.tasks;
+  // 3) если в шаблоне не нашли — создаём минимальную задачу прямо в override,
+  //    чтобы override не оставался пустым. Используем данные из patch по возможности.
+  if(!t){
+    const base = {
+      id: String(taskId || `task_${Date.now().toString(36)}`),
+      title: (patch && patch.title) ? String(patch.title) : "Без названия",
+      minutes: 0,
+      donePercent: 0,
+      done: false,
+    };
+    t = base;
+    ov.tasks.push(t);
   }
 
-  // 4) Применяем patch
-  if (patch && typeof patch === "object") {
-    Object.assign(t, patch);
+  // 4) применяем patch и нормализуем
+  Object.assign(t, patch || {});
+  if (typeof t.donePercent === 'number') {
+    t.donePercent = Math.max(0, Math.min(100, Math.round(t.donePercent)));
+    t.done = t.donePercent >= 100;
   }
 
-  // 5) Сохраняем
-  if (typeof saveOverride === "function") {
-    await saveOverride(ov);
-  }
-
+  await saveOv(ov);
   return ov.tasks;
 }

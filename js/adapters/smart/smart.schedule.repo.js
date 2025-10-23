@@ -1,15 +1,5 @@
-"use strict";
-import { scheduleRepo as local } from "../local/schedule.repo.local.js";
-import { scheduleRepoCloud as cloud } from "../cloud/schedule.repo.cloud.js";
+// js/adapters/smart/smart.schedule.repo.js
+// ЧИСТЫЕ реэкспорты без несуществующего `scheduleRepo`.
 
-/**
- * SmartRepo — объединяет local+cloud. Пока заглушка:
- * возвращает локальные данные, а при сохранении — только локально.
- */
-export const scheduleRepoSmart = {
-  async load() { return local.load(); },
-  async save(schedule) {
-    await local.save(schedule);
-    // TODO: sync с облаком + LWW
-  }
-};
+export * from "../local/schedule.repo.local.js";
+export { default } from "../local/schedule.repo.local.js";

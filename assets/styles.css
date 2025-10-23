@@ -1,42 +1,23 @@
-:root {
-  --bg: #f7f8fa;
-  --fg: #222;
-  --brand: #2a7ae2;
-  --radius: 12px;
-}
 
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+:root{
+  --bg:#0b1220; --panel:#111a2e; --text:#e7ecf5; --muted:#9fb0d3;
+  --accent:#5aa2ff; --ok:#3ddc97; --warn:#ffb703; --danger:#ff6b6b;
+  --card:#0f172a; --border:#1f2b44;
 }
-
-.dashboard {
-  display: block;
-  box-sizing: border-box;
-  padding: 1rem;
-  margin: 0 auto;
-  max-width: 960px;
-  overflow: hidden;
-  background: white;
-  border-radius: var(--radius);
-}
-
-.btn {
-  display: inline-block;
-  padding: 0.5rem 0.75rem;
-  margin-right: 0.5rem;
-  font-weight: 600;
-  background: white;
-  color: var(--brand);
-  border: 1px solid var(--brand);
-  border-radius: 8px;
-  transition: background 120ms ease;
-}
-.btn:hover { background: #eef5ff; }
-
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin: 1rem 0; }
-.stat { background: #fafbff; padding: .75rem; border-radius: 8px; }
-.stat strong { display: block; margin-top: .25rem; font-size: 1.2rem; }
+*{box-sizing:border-box}
+html,body{height:100%} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--panel);position:sticky;top:0;z-index:10;border-bottom:1px solid var(--border)}
+.brand{font-weight:700}
+.nav{display:flex;gap:8px;align-items:center}
+.tab{padding:6px 10px;border-radius:10px;background:#0d1426;border:1px solid var(--border);color:var(--text);cursor:pointer}
+.tab.active{background:var(--accent);color:#001b3b;border-color:var(--accent)}
+#date-input{background:#0d1426;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:10px}
+#today-btn{padding:6px 10px;border-radius:10px;background:#0d1426;border:1px solid var(--border);color:var(--text);cursor:pointer}
+.schedule-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.schedule-title{font-weight:700}
+.schedule-actions button{background:#0d1426;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:10px;cursor:pointer}
+.task-list{display:flex;flex-direction:column;gap:8px}
+.task-item{display:flex;gap:8px;align-items:center;justify-content:space-between;background:#0e162a;border:1px solid var(--border);border-radius:12px;padding:10px}
+.task-title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-controls button{background:#0d1426;border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:8px;cursor:pointer}
+.task-done{transform:scale(1.2)}
