@@ -1,0 +1,37 @@
+name: build-chatgpt-bundle
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'index.html'
+      - 'assets/**'
+      - 'js/**'
+      - 'FILES_WHITELIST.txt'
+      - '.github/workflows/bundle.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute names
+        id: meta
+        run: |
+          echo "SHA_SHORT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "STAMP=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Create bundle
+        run: |
+          mkdir -p chatgpt
+          zip -@ "chatgpt/howobot3-${{ steps.meta.outputs.SHA_SHORT }}-${{ steps.meta.outputs.STAMP }}.zip" < FILES_WHITELIST.txt
+          echo '{ "project":"howobot3", "sha":"'"${{ steps.meta.outputs.SHA_SHORT }}"'", "createdAt":"'"$(date -Iseconds)"'", "fileCount":'$(wc -l < FILES_WHITELIST.txt)' }'             > "chatgpt/manifest-${{ steps.meta.outputs.SHA_SHORT }}-${{ steps.meta.outputs.STAMP }}.json"
+
+      - name: Upload bundle as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-bundle-${{ steps.meta.outputs.SHA_SHORT }}
+          path: chatgpt/**
+          if-no-files-found: error
