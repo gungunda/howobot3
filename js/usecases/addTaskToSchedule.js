@@ -1,38 +1,34 @@
 // js/usecases/addTaskToSchedule.js
-// FIX: безопасный импорт makeId (поддержка default/именованного/отсутствия).
+// Добавляет новую задачу в расписание конкретного дня недели.
+// Вызывается из view-week.js по кнопке "+".
+//
+// Новая задача:
+//   { id, title, minutes, offloadDays: [] }
+//
+// Мы генерируем id локально (без зависимостей от app.js / id.js),
+// чтобы не было ошибок импорта.
 
-export default async function addTaskToSchedule({ weekday, task }){
-  const repo = await import("../adapters/smart/smart.schedule.repo.js");
-  const load = repo.loadSchedule || repo.load || (repo.default && repo.default.loadSchedule);
-  const save = repo.saveSchedule || repo.save || (repo.default && repo.default.saveSchedule);
-  if (typeof load !== "function" || typeof save !== "function") {
-    throw new Error("[addTaskToSchedule] schedule repo missing load/save");
-  }
+import { loadSchedule, saveSchedule } from "../adapters/smart/smart.schedule.repo.js";
 
-  // Безопасный импорт генератора id
-  let makeIdFn;
-  try {
-    const idMod = await import("../domain/id.js");
-    makeIdFn = idMod.makeId || idMod.default;
-  } catch {}
-  if (typeof makeIdFn !== "function") {
-    // Фолбэк: небольшой генератор id
-    makeIdFn = (prefix="task") => {
-      const rnd = Math.random().toString(36).slice(2, 8);
-      return `${prefix}_${Date.now().toString(36)}_${rnd}`;
-    };
-  }
+// простой генератор id. Нам не нужно что-то криптостойкое, просто чтобы не было коллизий.
+function generateId() {
+  return "t_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,7);
+}
 
-  const s = await load();
-  const arr = Array.isArray(s[weekday]) ? s[weekday] : (s[weekday] = []);
-  const t = {
-    id: (task && task.id) || makeIdFn("task"),
-    title: (task && task.title) || "Новая задача",
-    minutes: Number(task && task.minutes) || 0,
-    done: false,
-    donePercent: 0
+export default async function addTaskToSchedule({ weekday, task }) {
+  const schedule = await loadSchedule();
+
+  const newTask = {
+    id: generateId(),
+    title: String(task.title || "Новая задача"),
+    minutes: Math.max(0, Number(task.minutes) || 0),
+    offloadDays: Array.isArray(task.offloadDays) ? [...task.offloadDays] : []
   };
-  arr.push(t);
-  await save(s);
-  return t;
+
+  const dayArr = Array.isArray(schedule[weekday]) ? schedule[weekday] : [];
+  schedule[weekday] = [...dayArr, newTask];
+
+  await saveSchedule(schedule);
+
+  return schedule;
 }

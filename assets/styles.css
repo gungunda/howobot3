@@ -1,23 +1,375 @@
+/* assets/styles.css
+   Базовые стили для MVP.
+   Акцент: читаемость кода для junior-разработчика.
+*/
 
-:root{
-  --bg:#0b1220; --panel:#111a2e; --text:#e7ecf5; --muted:#9fb0d3;
-  --accent:#5aa2ff; --ok:#3ddc97; --warn:#ffb703; --danger:#ff6b6b;
-  --card:#0f172a; --border:#1f2b44;
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background:#f5f5f5;
+  color:#222;
+  margin:0;
+  padding:0;
 }
-*{box-sizing:border-box}
-html,body{height:100%} body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif}
-.topbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--panel);position:sticky;top:0;z-index:10;border-bottom:1px solid var(--border)}
-.brand{font-weight:700}
-.nav{display:flex;gap:8px;align-items:center}
-.tab{padding:6px 10px;border-radius:10px;background:#0d1426;border:1px solid var(--border);color:var(--text);cursor:pointer}
-.tab.active{background:var(--accent);color:#001b3b;border-color:var(--accent)}
-#date-input{background:#0d1426;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:10px}
-#today-btn{padding:6px 10px;border-radius:10px;background:#0d1426;border:1px solid var(--border);color:var(--text);cursor:pointer}
-.schedule-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.schedule-title{font-weight:700}
-.schedule-actions button{background:#0d1426;border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:10px;cursor:pointer}
-.task-list{display:flex;flex-direction:column;gap:8px}
-.task-item{display:flex;gap:8px;align-items:center;justify-content:space-between;background:#0e162a;border:1px solid var(--border);border-radius:12px;padding:10px}
-.task-title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.task-controls button{background:#0d1426;border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:8px;cursor:pointer}
-.task-done{transform:scale(1.2)}
+
+.app {
+  max-width:1200px;
+  margin:0 auto;
+  padding:12px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.card {
+  background:#fff;
+  border-radius:8px;
+  box-shadow:0 2px 4px rgba(0,0,0,0.07);
+  padding:12px 16px;
+}
+
+.section {
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.topbar {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+}
+
+.topbar-nav {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.topbar-nav button {
+  cursor:pointer;
+}
+
+.topbar-date {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+
+.main {
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.footer {
+  text-align:center;
+  padding:12px;
+  color:#666;
+}
+
+.small {
+  font-size:0.8rem;
+}
+
+.muted {
+  color:#666;
+}
+
+.hint-text {
+  margin-top:12px;
+  line-height:1.4;
+  color:#666;
+}
+
+.section-head-inline {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+}
+
+.section-title {
+  margin:0;
+  font-size:1rem;
+  font-weight:600;
+}
+
+/* DASHBOARD (дневной экран) */
+
+.dashboard .schedule-header {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  gap:8px;
+  align-items:flex-start;
+}
+
+.schedule-title {
+  font-size:1rem;
+  font-weight:600;
+}
+
+.schedule-actions button {
+  cursor:pointer;
+  margin-left:4px;
+}
+
+.stats-row {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:8px;
+}
+
+.stat-box {
+  text-align:center;
+}
+
+.stat-value {
+  font-size:1rem;
+  font-weight:600;
+}
+
+.task-list {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.task-item {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+  background:#fafafa;
+  border:1px solid #ddd;
+  border-radius:6px;
+  padding:8px 10px;
+}
+
+.task-left {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:flex-start;
+}
+
+.task-done {
+  margin-top:2px;
+}
+
+.task-title {
+  font-weight:500;
+  line-height:1.3;
+}
+
+.task-controls {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+}
+
+.task-controls button {
+  cursor:pointer;
+  font-size:0.8rem;
+}
+
+.badge {
+  background:#eee;
+  border-radius:4px;
+  padding:2px 6px;
+  font-size:0.75rem;
+  line-height:1.2;
+}
+
+/* OFFLOAD (разгрузка) */
+
+.offload-section {
+  border-top:1px solid #ddd;
+  padding-top:12px;
+}
+
+.offload-title {
+  font-weight:600;
+  color:#444;
+}
+
+/* WEEK / SCHEDULE */
+
+.week-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+  gap:12px;
+}
+
+.week-day {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  background:#fff;
+}
+
+.week-day-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+  font-weight:600;
+  font-size:0.9rem;
+}
+
+.week-add {
+  cursor:pointer;
+}
+
+.week-day-list {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.week-row {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.week-row-right {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+}
+
+.week-edit-form {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  background:#f0f7ff;
+  border:1px solid #99c2ff;
+  border-radius:6px;
+  padding:8px;
+}
+
+.week-edit-title,
+.week-edit-minutes {
+  width:100%;
+  box-sizing:border-box;
+  padding:6px 8px;
+  border-radius:4px;
+  border:1px solid #bbb;
+  font-size:0.9rem;
+}
+
+.week-offload-grid {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+
+.offload-choice {
+  display:flex;
+  align-items:center;
+  gap:4px;
+  background:#fff;
+  border:1px solid #bbb;
+  border-radius:4px;
+  padding:2px 6px;
+  font-size:0.8rem;
+}
+
+.week-edit-buttons {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:4px;
+}
+
+.week-save,
+.week-cancel,
+.week-edit,
+.week-del {
+  cursor:pointer;
+  font-size:0.8rem;
+}
+
+/* CALENDAR */
+
+.cal-head-left {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+
+.cal-nav {
+  cursor:pointer;
+}
+
+.calendar-wrapper {
+  margin-top:12px;
+}
+
+.calendar-grid {
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  grid-auto-rows:minmax(44px,auto);
+  gap:4px;
+  text-align:center;
+  font-size:0.8rem;
+}
+
+.calendar-cell {
+  background:#fafafa;
+  border:1px solid #ddd;
+  border-radius:4px;
+  padding:6px;
+  line-height:1.3;
+  cursor:default;
+  user-select:none;
+}
+
+.cal-header {
+  background:#eef;
+  font-weight:600;
+  border:1px solid #99c2ff;
+}
+
+.cal-day {
+  cursor:pointer;
+  background:#fff;
+}
+
+.cal-day.outside {
+  opacity:0.4;
+}
+
+.cal-day.today {
+  border:2px solid #4caf50;
+}
+
+.cal-day.selected {
+  background:#eef;
+  border:2px solid #88f;
+}
+
+/* MISC BUTTON STYLES */
+
+button {
+  background:#fff;
+  border:1px solid #aaa;
+  border-radius:4px;
+  padding:4px 8px;
+  font-size:0.8rem;
+  line-height:1.2;
+}
+
+button:hover {
+  background:#f0f0f0;
+}

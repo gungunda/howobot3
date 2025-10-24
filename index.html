@@ -1,23 +1,120 @@
-
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Study Planner</title>
+  <meta charset="UTF-8" />
+  <title>Лёшин планировщик</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="./assets/styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">💡 Study Planner</div>
-    <nav class="nav">
-      <button id="tab-day" class="tab active">Расписание</button>
-      <input id="date-input" type="date" />
-      <button id="today-btn">Сегодня</button>
-      <button id="tab-week" class="tab">Неделя</button>
+<div id="app" class="app">
+
+  <!-- Хедер с навигацией и выбором даты -->
+  <header class="topbar card section">
+    <nav class="topbar-nav">
+      <button data-nav="dashboard" id="nav-dashboard" type="button">Сегодня</button>
+      <button data-nav="schedule"  id="nav-schedule"  type="button">Расписание</button>
+      <button data-nav="calendar"  id="nav-calendar"  type="button">Календарь</button>
     </nav>
+
+    <div class="topbar-date">
+      <input data-date-input id="date-input" type="date" />
+      <button data-action="today" id="today-btn" type="button">Сегодня</button>
+    </div>
   </header>
-  <main id="app"></main>
-  <script type="module" src="./js/app.js"></script>
+
+  <main class="main">
+    <!-- === DASHBOARD (ДЕНЬ) === -->
+    <section class="view" data-view="dashboard">
+      <div class="section card dashboard" data-dashboard-root data-date-key="">
+        <div class="schedule-header">
+          <div class="schedule-title" data-day-label>Домашняя работа</div>
+          <div class="schedule-actions">
+            <button data-action="open-schedule-editor" type="button">Редактировать расписание</button>
+            <button data-action="reset-day" type="button">Сбросить день</button>
+          </div>
+        </div>
+
+        <!-- Блок статов по дню -->
+        <div class="stats-row">
+          <div class="stat-box card">
+            <div class="stat-label small muted">Запланировано</div>
+            <div class="stat-value" data-stat="planned">–</div>
+          </div>
+          <div class="stat-box card">
+            <div class="stat-label small muted">Сделано</div>
+            <div class="stat-value" data-stat="done">–</div>
+          </div>
+          <div class="stat-box card">
+            <div class="stat-label small muted">Осталось</div>
+            <div class="stat-value" data-stat="left">–</div>
+          </div>
+          <div class="stat-box card">
+            <div class="stat-label small muted">ETA</div>
+            <div class="stat-value" data-stat="eta">–</div>
+          </div>
+        </div>
+
+        <!-- Основные задачи дня (то, что пришло из D+1 или из override дня) -->
+        <div class="task-list" data-tasks></div>
+        <div class="muted" data-empty style="display:none">Нет задач</div>
+
+        <!-- Разгрузка -->
+        <div class="offload-section" data-offload-wrapper style="margin-top:24px;display:none;">
+          <div class="offload-title small muted" style="margin-bottom:8px;">Разгрузка</div>
+          <div class="task-list offload-list" data-offload></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- === НЕДЕЛЯ / РАСПИСАНИЕ === -->
+    <section class="view" data-view="schedule" hidden>
+      <div class="section card">
+        <div class="section-head section-head-inline">
+          <h2 class="section-title">Расписание недели</h2>
+          <button data-action="back-to-dashboard" type="button">Назад к дню</button>
+        </div>
+
+        <!-- карточки Пн..Вс -->
+        <div class="week-grid" data-week></div>
+
+        <p class="muted small hint-text">
+          Нажми «+», чтобы добавить предмет. ✎ — редактировать. 🗑 — удалить.<br/>
+          В режиме редактирования можно выбрать дни разгрузки.
+        </p>
+      </div>
+    </section>
+
+    <!-- === КАЛЕНДАРЬ === -->
+    <section class="view" data-view="calendar" hidden>
+      <div class="section card">
+        <div class="section-head section-head-inline">
+          <div class="cal-head-left">
+            <button class="cal-nav" data-cal-prev type="button">←</button>
+            <div class="cal-label" data-cal-label>Месяц Год</div>
+            <button class="cal-nav" data-cal-next type="button">→</button>
+          </div>
+
+          <button data-action="back-to-dashboard-2" type="button">Назад к дню</button>
+        </div>
+
+        <div class="calendar-wrapper">
+          <!-- сетка 7x6 (пн-вс) + заголовки дней недели -->
+          <div class="calendar-grid" data-cal-grid></div>
+        </div>
+
+        <p class="muted small hint-text">
+          Кликни на число, чтобы выбрать дату. ← → листают месяцы.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="muted small footer">
+    Лёшин планировщик · локальный режим
+  </footer>
+</div>
+
+<script type="module" src="./js/app.js"></script>
 </body>
 </html>
