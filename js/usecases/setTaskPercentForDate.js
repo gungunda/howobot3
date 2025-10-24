@@ -1,7 +1,14 @@
 // js/usecases/setTaskPercentForDate.js
+import ensureOverrideForDate from "./ensureOverrideForDate.js";
 export default async function setTaskPercentForDate({ dateKey, taskId, value = 0 }){
-  const edit = (await import("./editTaskInline.js")).default;
-  const pct = Math.max(0, Math.min(100, Math.round(Number(value)||0)));
-  const done = pct >= 100;
-  return edit({ dateKey, taskId, patch: { donePercent: pct, done } });
+  const ovRepo = await import("../adapters/smart/smart.override.repo.js");
+  const saveOv = ovRepo.saveOverride || ovRepo.save;
+  const ov = await ensureOverrideForDate(dateKey);
+  const tasks = ov.tasks || (ov.tasks=[]);
+  const t = tasks.find(x=>x.id===taskId);
+  if (!t) return tasks;
+  t.donePercent = Math.max(0, Math.min(100, Math.round(Number(value)||0)));
+  t.done = t.donePercent >= 100;
+  await saveOv(ov);
+  return tasks;
 }
