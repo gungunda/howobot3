@@ -1,175 +1,189 @@
 // js/ui/view-dashboard.js
-// Рендер дашборда (экран "Сегодня").
-// Мы рисуем две зоны:
-//   1) "На завтра" — то, что реально надо сделать к завтрашнему дню.
-//   2) "Разгрузка" — подготовка заранее к другим дням.
+// -----------------------------------------------------------------------------
+// Рисуем главный экран ("День"):
+//  - блок "На завтра"
+//  - блок "Разгрузка (сделай заранее)"
+//  - статистика
 //
-// На вход прилетает объект:
-//   {
-//     dateKey: "2025-10-24",
-//     tasks:        [ { id, title, minutes, donePercent, done, mainWeekday, source: "core" }, ... ],
-//     offloadTasks: [ { ...source:"offload"... }, ... ],
-//     stats: { totalMinutes, doneMinutes, doneAvg }
-//   }
+// ВАЖНО: поддерживаем inline-редактирование.
+// Если задача в dashboardEdit и она source="core":
+//   -> рендерим форму с полями Название / Минуты / Сохранить / Отмена
 //
-// Для каждой задачи мы ставим data-атрибуты на .task-item:
-//   data-task-id="..."
-//   data-source="core"|"offload"
-//   data-main-weekday="monday"|"tuesday"|...
-//
-// Эти атрибуты читает events.js, чтобы понять,
-// в какой override-день писать прогресс при кликах +10%, -10%, чекбоксе done.
+// Если задача в dashboardEdit и она source="offload":
+//   -> рендерим НЕ форму, а подсказку:
+//      "Это задача-разгрузка. Правка доступна в расписании соответствующего
+//       дня недели или даты..."
+// -----------------------------------------------------------------------------
 
-import { minutesToStr } from "../utils/format-utils.js";
-
-// Отрисовка одной задачи
-function renderTaskRow(t) {
-  // t: { id,title,minutes,donePercent,done,mainWeekday,source }
-
-  const row = document.createElement("div");
-  row.className = "task-item";
-  row.dataset.taskId = String(t.id || "");
-  row.dataset.source = t.source || "core";
-  row.dataset.mainWeekday = t.mainWeekday || "";
-
-  // левая часть: чекбокс done + заголовок + минуты
-  const leftWrap = document.createElement("label");
-  leftWrap.className = "task-left";
-
-  const cb = document.createElement("input");
-  cb.type = "checkbox";
-  cb.className = "task-done";
-  cb.checked = !!t.done;
-
-  const titleSpan = document.createElement("span");
-  titleSpan.className = "task-title";
-  titleSpan.textContent = t.title || "Без названия";
-
-  const minsSpan = document.createElement("span");
-  minsSpan.className = "task-minutes muted small";
-  minsSpan.textContent = " · " + minutesToStr(t.minutes || 0);
-
-  leftWrap.append(cb, titleSpan, minsSpan);
-
-  // правая часть: -10% [xx%] +10% ✎
-  const rightWrap = document.createElement("div");
-  rightWrap.className = "task-controls";
-
-  const minusBtn = document.createElement("button");
-  minusBtn.className = "task-pct-minus";
-  minusBtn.textContent = "-10%";
-
-  const pctLabel = document.createElement("span");
-  pctLabel.className = "task-pct-label";
-  pctLabel.textContent = (t.donePercent ?? 0) + "%";
-
-  const plusBtn = document.createElement("button");
-  plusBtn.className = "task-pct-plus";
-  plusBtn.textContent = "+10%";
-
-  const editBtn = document.createElement("button");
-  editBtn.className = "task-edit";
-  editBtn.textContent = "✎";
-
-  rightWrap.append(minusBtn, pctLabel, plusBtn, editBtn);
-
-  row.append(leftWrap, rightWrap);
-  return row;
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-// Отрисовка секции (заголовок + список задач)
-function renderTaskList(title, tasksArr) {
-  const box = document.createElement("section");
-  box.className = "dash-block";
+// Обычный (не редактируемый) вид строки задачи
+function renderTaskRowView(task) {
+  return `
+    <div class="task-item"
+         data-task-id="${escapeHtml(task.id)}"
+         data-source="${escapeHtml(task.source || "core")}"
+         data-main-weekday="${escapeHtml(task.mainWeekday || "")}">
+      <label class="task-checkline">
+        <input class="task-done" type="checkbox" ${task.done ? "checked" : ""}/>
+        <span class="task-title">${escapeHtml(task.title)}</span>
+      </label>
 
-  const h = document.createElement("div");
-  h.className = "dash-block-header";
+      <div class="task-mins">${Number(task.minutes) || 0} мин</div>
 
-  const hTitle = document.createElement("div");
-  hTitle.className = "dash-block-title";
-  hTitle.textContent = title;
+      <div class="task-progress">
+        <button class="task-pct-minus">–10%</button>
+        <span class="task-pct-val">${Number(task.donePercent) || 0}%</span>
+        <button class="task-pct-plus">+10%</button>
+      </div>
 
-  h.appendChild(hTitle);
-  box.appendChild(h);
+      <button class="task-edit" title="Редактировать">✎</button>
+    </div>
+  `;
+}
 
-  const list = document.createElement("div");
-  list.className = "dash-list";
+// Инлайн-форма редактирования ДЛЯ обычной задачи (source="core")
+function renderTaskRowEditCore(task) {
+  return `
+    <div class="task-item editing"
+         data-task-id="${escapeHtml(task.id)}"
+         data-source="core"
+         data-main-weekday="${escapeHtml(task.mainWeekday || "")}">
+      <div class="task-edit-fields">
+        <label>
+          Название:
+          <input class="dash-edit-title"
+                 type="text"
+                 value="${escapeHtml(task.title)}" />
+        </label>
 
-  if (Array.isArray(tasksArr) && tasksArr.length) {
-    tasksArr.forEach(t => {
-      list.appendChild(renderTaskRow(t));
-    });
-  } else {
-    const empty = document.createElement("div");
-    empty.className = "muted small";
-    empty.textContent = "Нет задач";
-    list.appendChild(empty);
+        <label>
+          Минуты:
+          <input class="dash-edit-minutes"
+                 type="number"
+                 min="0"
+                 value="${Number(task.minutes) || 0}" />
+        </label>
+      </div>
+
+      <div class="dash-edit-actions">
+        <button class="dash-save">Сохранить</button>
+        <button class="dash-cancel">Отмена</button>
+      </div>
+    </div>
+  `;
+}
+
+// "Редактирование" разгрузочной задачи (source="offload"):
+// не показываем инпуты, только подсказку
+function renderTaskRowEditOffload(task) {
+  return `
+    <div class="task-item editing offload-hint"
+         data-task-id="${escapeHtml(task.id)}"
+         data-source="offload"
+         data-main-weekday="${escapeHtml(task.mainWeekday || "")}">
+      <div class="dash-offload-hint">
+        Это задача-разгрузка.
+        Правка доступна в расписании соответствующего дня недели или даты.
+        Открой вкладку «Расписание» или выбери нужную дату в календаре.
+      </div>
+      <div class="dash-edit-actions">
+        <button class="dash-cancel">Закрыть</button>
+      </div>
+    </div>
+  `;
+}
+
+// Рендер одной строки с учётом режима редактирования
+function renderTaskRow(task, dashboardEdit) {
+  const isEditing = dashboardEdit && dashboardEdit.taskId === task.id;
+
+  if (!isEditing) {
+    return renderTaskRowView(task);
   }
 
-  box.appendChild(list);
-  return box;
+  // Если редактируемую строку пометили как core -> форма
+  if (dashboardEdit.source === "core") {
+    return renderTaskRowEditCore(task);
+  }
+
+  // Если редактируемая строка offload -> подсказка
+  return renderTaskRowEditOffload(task);
 }
 
-// Статистика дня (сверху)
-function renderStats(statsObj) {
-  const wrap = document.createElement("div");
-  wrap.className = "dash-stats small";
+// Рендер секции задач: заголовок + список
+function renderTaskSection(title, tasks, dashboardEdit) {
+  if (!tasks || !tasks.length) {
+    return `
+      <section class="dash-block">
+        <h2>${escapeHtml(title)}</h2>
+        <div class="dash-empty">Нет задач</div>
+      </section>
+    `;
+  }
 
-  const total = Number(statsObj?.totalMinutes || 0);
-  const done = Math.round(Number(statsObj?.doneMinutes || 0));
-  const avg = Number(statsObj?.doneAvg || 0);
+  let html = `
+    <section class="dash-block">
+      <h2>${escapeHtml(title)}</h2>
+      <div class="dash-tasklist">
+  `;
 
-  wrap.textContent =
-    "Всего " + total + " мин · " +
-    "Готово ~" + done + " мин · " +
-    "Средний прогресс " + avg + "%";
+  for (const t of tasks) {
+    html += renderTaskRow(t, dashboardEdit);
+  }
 
-  return wrap;
+  html += `
+      </div>
+    </section>
+  `;
+  return html;
 }
 
-// Главная функция рендера дашборда
-export function updateDashboardView({ dateKey, tasks, offloadTasks, stats }) {
-  const view = document.querySelector('[data-view="dashboard"]');
-  if (!view) return;
+// Рендер статистики дня
+function renderStats(stats) {
+  const total = Number(stats?.totalMinutes || 0);
+  const doneM = Number(stats?.doneMinutes || 0);
+  const avg   = Number(stats?.doneAvg || 0);
 
-  const root = view.querySelector("[data-dashboard-root]");
+  return `
+    <section class="dash-stats">
+      <div>Всего минут: ${total}</div>
+      <div>Сделано (мин): ${Math.round(doneM)}</div>
+      <div>Средний прогресс: ${avg}%</div>
+    </section>
+  `;
+}
+
+// Главная точка отрисовки дашборда
+export function updateDashboardView(model) {
+  const { dateKey, tasks, offloadTasks, stats, dashboardEdit } = model;
+
+  const root = document.querySelector('[data-view="dashboard"]');
   if (!root) return;
 
-  // Запоминаем текущую дату для обработчиков событий
-  root.dataset.dateKey = dateKey;
+  let out = `
+    <div class="dash-header" data-dashboard-root data-date-key="${escapeHtml(dateKey)}">
+      <div class="dash-header-main">
+        <h1>День ${escapeHtml(dateKey)}</h1>
+        <button data-action="reset-day">Сбросить день</button>
+        <button data-action="open-schedule-editor">Расписание</button>
+      </div>
+    </div>
+  `;
 
-  // Полностью перерисовываем дашборд
-  root.innerHTML = "";
+  out += renderStats(stats);
 
-  // Верхняя панель — статистика и кнопки
-  const topBar = document.createElement("div");
-  topBar.className = "dash-topbar";
+  // блок "На завтра"
+  out += renderTaskSection("На завтра", tasks, dashboardEdit);
 
-  // блок статистики
-  topBar.appendChild(renderStats(stats || {}));
+  // блок "Разгрузка (сделай заранее)"
+  out += renderTaskSection("Разгрузка (сделай заранее)", offloadTasks, dashboardEdit);
 
-  // кнопки "Сбросить день" и "Расписание"
-  const btnRow = document.createElement("div");
-  btnRow.className = "dash-top-buttons";
-
-  const resetBtn = document.createElement("button");
-  resetBtn.setAttribute("data-action", "reset-day");
-  resetBtn.textContent = "Сбросить день";
-
-  const schedBtn = document.createElement("button");
-  schedBtn.setAttribute("data-action", "open-schedule-editor");
-  schedBtn.textContent = "Расписание";
-
-  btnRow.append(resetBtn, schedBtn);
-  topBar.appendChild(btnRow);
-
-  root.appendChild(topBar);
-
-  // Блок "На завтра"
-  const coreBlock = renderTaskList("На завтра", tasks || []);
-  root.appendChild(coreBlock);
-
-  // Блок "Разгрузка"
-  const offBlock = renderTaskList("Разгрузка", offloadTasks || []);
-  root.appendChild(offBlock);
+  root.innerHTML = out;
 }

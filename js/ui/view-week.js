@@ -1,230 +1,246 @@
 // js/ui/view-week.js
-// Расписание недели + инлайн-редактор задачи расписания с днями разгрузки.
+// ------------------------------------------------------------
+// Отрисовка вкладки "Расписание недели".
+// Мы показываем карточки дней недели и список задач.
+// Поддерживаем два режима:
+//   1) обычный просмотр задач дня;
+//   2) инлайн-редактор задачи (в том числе для новой задачи).
 //
-// Новое в этой версии:
-//  - у задачи в расписании есть поле offloadDays: массив строк дней недели
-//    (например ["tuesday","thursday"])
-//  - у задачи в override это поле всегда null, но override тут не редактируется
-//  - в инлайн-редакторе мы показываем чекбоксы для всех дней недели,
-//    НО запрещаем выбирать "предыдущий день" относительно основного дня.
-//    Пример: редактируем среду -> вторник отключён.
-//    Это правило из доменной логики: за день до основного дня
-//    предмет и так попадает как обычная D+1 задача, это не считается разгрузкой.
+// state.scheduleEdit = { weekday, taskId }
+//   - если taskId === "__new__", значит добавление новой задачи инлайном.
+//   - иначе редактирование существующей задачи с данным taskId.
+//
+// Каждая задача:
+//   { id, title, minutes, offloadDays: ['monday','wednesday', ...] }
+//
+// offloadDays — массив дней, когда задачу можно "разгружать" заранее.
+// Бизнес-правило: нельзя разгружать на день, который идёт ПЕРЕД
+// основным днём задачи. То есть если задача назначена на среду,
+// во вторник это будет "обычное" задание, а не разгрузка.
+// Поэтому вторник нельзя включить как offload.
+// ------------------------------------------------------------
 
-import { minutesToStr } from "../utils/format-utils.js";
+// Маппинг weekday -> короткий лейбл
+const WEEKDAY_LABEL = {
+  monday: "Пн",
+  tuesday: "Вт",
+  wednesday: "Ср",
+  thursday: "Чт",
+  friday: "Пт",
+  saturday: "Сб",
+  sunday: "Вс"
+};
 
+// Порядок дней
 const WEEK_ORDER = [
-  ["monday","Понедельник"],
-  ["tuesday","Вторник"],
-  ["wednesday","Среда"],
-  ["thursday","Четверг"],
-  ["friday","Пятница"],
-  ["saturday","Суббота"],
-  ["sunday","Воскресенье"],
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday"
 ];
 
-const WEEK_SHORT = [
-  ["monday","Пн"],
-  ["tuesday","Вт"],
-  ["wednesday","Ср"],
-  ["thursday","Чт"],
-  ["friday","Пт"],
-  ["saturday","Сб"],
-  ["sunday","Вс"],
-];
-
-function prevWeekday(dayKey){
-  // Возвращаем день недели, который идёт "накануне" данного dayKey.
-  // monday -> sunday
-  // tuesday -> monday
-  // ...
-  const order = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
-  const idx = order.indexOf(dayKey);
-  if(idx === -1) return null;
-  const prevIdx = (idx + 6) % 7;
-  return order[prevIdx];
+// prevWeekdayKey("monday") -> "sunday" и т.д.
+// Нужна для правила: нельзя разгружать на предыдущий день.
+function prevWeekdayKey(dayKey) {
+  const prevMap = {
+    monday: "sunday",
+    tuesday: "monday",
+    wednesday: "tuesday",
+    thursday: "wednesday",
+    friday: "thursday",
+    saturday: "friday",
+    sunday: "saturday"
+  };
+  return prevMap[dayKey] || "saturday";
 }
 
-function renderReadonlyRow(t){
-  const row = document.createElement("div");
-  row.className = "task-item";
-  row.dataset.taskId = t.id ?? "";
-
-  const rowWrap = document.createElement("div");
-  rowWrap.className = "week-row";
-
-  const tt = document.createElement("span");
-  tt.className = "task-title";
-  tt.textContent = t.title || "Без названия";
-
-  const badge = document.createElement("span");
-  badge.className = "badge";
-  badge.textContent = minutesToStr(t.minutes || 0);
-
-  const editBtn = document.createElement("button");
-  editBtn.className = "week-edit";
-  editBtn.textContent = "✎";
-
-  const delBtn = document.createElement("button");
-  delBtn.className = "week-del";
-  delBtn.textContent = "🗑";
-
-  const right = document.createElement("span");
-  right.className = "week-row-right";
-  right.append(badge, editBtn, delBtn);
-
-  rowWrap.append(tt, right);
-  row.appendChild(rowWrap);
-  return row;
+// Экранируем опасные символы, чтобы не сломать HTML
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-// weekdayKey — это день расписания, который мы сейчас редактируем (например "wednesday").
-// Мы его используем, чтобы запретить отмечать предыдущий день как разгрузочный.
-function renderEditRow(t, weekdayKey){
-  const row = document.createElement("div");
-  row.className = "task-item editing";
-  row.dataset.taskId = t.id ?? "";
+// Рисуем чекбоксы "разгружать в дни"
+function renderOffloadCheckboxes(mainWeekday, offloadDaysArr) {
+  const disallowDay = prevWeekdayKey(mainWeekday); // на этот день разгружать нельзя
+  const allDays = WEEK_ORDER;
 
-  const formWrap = document.createElement("div");
-  formWrap.className = "week-edit-form";
+  let out = '<div class="week-offload-group">';
+  out += '<div class="week-offload-label">Разгружать в дни:</div>';
+  out += '<div class="week-offload-list">';
 
-  const titleLabel = document.createElement("div");
-  titleLabel.className = "small muted";
-  titleLabel.textContent = "Название";
+  for (const d of allDays) {
+    const label = WEEKDAY_LABEL[d] || d;
+    const checked = offloadDaysArr.includes(d) ? "checked" : "";
+    const disabled = (d === disallowDay) ? "disabled" : "";
 
-  const titleInput = document.createElement("input");
-  titleInput.type = "text";
-  titleInput.className = "week-edit-title";
-  titleInput.value = t.title || "";
+    out += `
+      <label class="week-offload-item">
+        <input
+          class="week-offload-chk"
+          type="checkbox"
+          value="${d}"
+          ${checked}
+          ${disabled}
+        />
+        <span>${label}</span>
+      </label>
+    `;
+  }
 
-  const minLabel = document.createElement("div");
-  minLabel.className = "small muted";
-  minLabel.textContent = "Минуты";
+  out += "</div></div>";
+  return out;
+}
 
-  const minInput = document.createElement("input");
-  minInput.type = "number";
-  minInput.className = "week-edit-minutes";
-  minInput.value = String(t.minutes || 0);
+// Нормальный (не редактируемый) вид задачи
+function renderTaskViewRow(task) {
+  const offloadInfo = Array.isArray(task.offloadDays) && task.offloadDays.length
+    ? `Разгрузка: ${task.offloadDays.map(d => WEEKDAY_LABEL[d] || d).join(", ")}`
+    : "Разгрузка: —";
 
-  const offLabel = document.createElement("div");
-  offLabel.className = "small muted";
-  offLabel.textContent = "Разгрузка по дням";
+  return `
+    <div class="task-item" data-task-id="${task.id}">
+      <div class="task-mainline">
+        <span class="task-title">${escapeHtml(task.title)}</span>
+        <span class="task-mins">${Number(task.minutes) || 0} мин</span>
+      </div>
+      <div class="task-meta">${offloadInfo}</div>
+      <div class="task-actions">
+        <button class="week-edit" title="Редактировать">✎</button>
+        <button class="week-del" title="Удалить">🗑</button>
+      </div>
+    </div>
+  `;
+}
 
-  const offWrap = document.createElement("div");
-  offWrap.className = "week-offload-grid";
+// Редактор задачи (и для новой, и для существующей)
+function renderTaskEditRow(mainWeekday, task, isNew) {
+  // task: { id, title, minutes, offloadDays[] }
+  // isNew: true для новой задачи
+  const titleVal = task.title || "";
+  const minutesVal = task.minutes != null ? task.minutes : 30;
+  const offloadDaysArr = Array.isArray(task.offloadDays) ? task.offloadDays : [];
 
-  const offSet = Array.isArray(t.offloadDays) ? t.offloadDays : [];
-  const blockedDay = prevWeekday(weekdayKey); // этот день нельзя выбирать
+  const offloadBlock = renderOffloadCheckboxes(mainWeekday, offloadDaysArr);
 
-  for(const [wdKey, wdShort] of WEEK_SHORT){
-    const lbl = document.createElement("label");
-    lbl.className = "offload-choice";
+  return `
+    <div
+      class="task-item editing ${isNew ? "is-new" : ""}"
+      data-task-id="${isNew ? "__new__" : escapeHtml(task.id)}"
+    >
+      <div class="task-edit-fields">
+        <label>
+          Название:
+          <input
+            class="week-edit-title"
+            type="text"
+            value="${escapeHtml(titleVal)}"
+            placeholder="Новая задача"
+          />
+        </label>
 
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.className = "week-offload-chk";
-    cb.value = wdKey;
+        <label>
+          Минуты:
+          <input
+            class="week-edit-minutes"
+            type="number"
+            min="0"
+            value="${minutesVal}"
+          />
+        </label>
 
-    // чекнут, если был в offSet
-    cb.checked = offSet.includes(wdKey);
+        ${offloadBlock}
+      </div>
 
-    // если это запрещённый "предыдущий день", то делаем недоступным и снимаем галочку
-    if (wdKey === blockedDay) {
-      cb.checked = false;
-      cb.disabled = true;
+      <div class="week-edit-actions">
+        <button class="week-save">Сохранить</button>
+        <button class="week-cancel">Отмена</button>
+      </div>
+    </div>
+  `;
+}
+
+// Карточка дня недели: заголовок + список задач + кнопка "+"
+function renderDayCard(weekday, tasks, editingInfo) {
+  let html = `
+    <section class="week-day" data-weekday="${weekday}">
+      <h2 class="week-day-title">${WEEKDAY_LABEL[weekday] || weekday}</h2>
+      <div class="week-day-tasks">
+  `;
+
+  // Если мы добавляем новую задачу в этот день:
+  if (
+    editingInfo &&
+    editingInfo.weekday === weekday &&
+    editingInfo.taskId === "__new__"
+  ) {
+    // Пустой драфт
+    const draftTask = {
+      id: "__new__",
+      title: "",
+      minutes: 30,
+      offloadDays: []
+    };
+    html += renderTaskEditRow(weekday, draftTask, true);
+  }
+
+  // Рисуем задачи
+  for (const task of tasks) {
+    const isEditing =
+      editingInfo &&
+      editingInfo.weekday === weekday &&
+      editingInfo.taskId === String(task.id);
+
+    if (isEditing) {
+      html += renderTaskEditRow(weekday, task, false);
+    } else {
+      html += renderTaskViewRow(task);
     }
-
-    const span = document.createElement("span");
-    span.textContent = wdShort;
-
-    lbl.append(cb, span);
-    offWrap.appendChild(lbl);
   }
 
-  const btnRow = document.createElement("div");
-  btnRow.className = "week-edit-buttons";
+  html += `
+      </div>
+      <div class="week-add-wrap">
+        <button class="week-add">+ Добавить задачу</button>
+      </div>
+    </section>
+  `;
 
-  const saveBtn = document.createElement("button");
-  saveBtn.className = "week-save";
-  saveBtn.textContent = "Сохранить";
-
-  const cancelBtn = document.createElement("button");
-  cancelBtn.className = "week-cancel";
-  cancelBtn.textContent = "Отмена";
-
-  btnRow.append(saveBtn, cancelBtn);
-
-  formWrap.append(
-    titleLabel,
-    titleInput,
-    minLabel,
-    minInput,
-    offLabel,
-    offWrap,
-    btnRow
-  );
-
-  row.appendChild(formWrap);
-  return row;
+  return html;
 }
 
-function renderDayCard(weekdayKey, weekdayTitle, tasksForDay, uiState){
-  const card = document.createElement("div");
-  card.className = "week-day card";
-  card.dataset.weekday = weekdayKey;
+// Главная функция, которую зовёт events.js -> refreshScheduleEditor()
+export function updateWeekView(schedule, state) {
+  const root = document.querySelector('[data-view="schedule"]');
+  if (!root) return;
 
-  const head = document.createElement("div");
-  head.className = "week-day-header";
+  const editingInfo = state && state.scheduleEdit ? state.scheduleEdit : null;
 
-  const titleEl = document.createElement("div");
-  titleEl.className = "week-day-title";
-  titleEl.textContent = weekdayTitle;
+  let out = `
+    <div class="week-header">
+      <button class="back-btn" data-action="back-to-dashboard">← Назад</button>
+      <h1>Расписание недели</h1>
+      <p class="hint">
+        Здесь ты задаёшь шаблон. Разгрузка = дни, когда можно работать заранее.
+      </p>
+    </div>
+    <div class="week-columns">
+  `;
 
-  const addBtn = document.createElement("button");
-  addBtn.className = "week-add";
-  addBtn.textContent = "+";
-
-  head.append(titleEl, addBtn);
-  card.appendChild(head);
-
-  const list = document.createElement("div");
-  list.className = "week-day-list";
-
-  if(Array.isArray(tasksForDay) && tasksForDay.length){
-    for(const t of tasksForDay){
-      const isEditing =
-        uiState.scheduleEdit &&
-        uiState.scheduleEdit.weekday === weekdayKey &&
-        uiState.scheduleEdit.taskId === t.id;
-
-      const row = isEditing
-        ? renderEditRow(t, weekdayKey) // <--- пробрасываем weekdayKey
-        : renderReadonlyRow(t);
-
-      list.appendChild(row);
-    }
-  } else {
-    const empty = document.createElement("div");
-    empty.className = "muted small";
-    empty.textContent = "Нет предметов";
-    list.appendChild(empty);
+  for (const weekday of WEEK_ORDER) {
+    const tasks = Array.isArray(schedule?.[weekday]) ? schedule[weekday] : [];
+    out += renderDayCard(weekday, tasks, editingInfo);
   }
 
-  card.appendChild(list);
-  return card;
-}
+  out += `
+    </div>
+  `;
 
-export function updateWeekView(schedule, uiState){
-  const view = document.querySelector('[data-view="schedule"]');
-  if(!view) return;
-  const container = view.querySelector("[data-week]");
-  if(!container) return;
-
-  container.innerHTML = "";
-
-  for(const [weekdayKey, weekdayTitle] of WEEK_ORDER){
-    const dayTasks = Array.isArray(schedule?.[weekdayKey]) ? schedule[weekdayKey] : [];
-    const card     = renderDayCard(weekdayKey, weekdayTitle, dayTasks, uiState);
-    container.appendChild(card);
-  }
+  root.innerHTML = out;
 }
