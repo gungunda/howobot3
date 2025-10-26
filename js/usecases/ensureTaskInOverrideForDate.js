@@ -1,66 +1,54 @@
 // js/usecases/ensureTaskInOverrideForDate.js
-// Гарантирует, что в override на конкретную дату (dateKey)
-// есть задача с данным taskId.
-// Если override не существует — создаём снапшот дня через ensureOverrideForDate.
-// Если задачи ещё нет в ov.tasks — ищем её в расписании недели
-// и копируем туда с прогрессом 0.
-//
-// ВАЖНО: В override поле offloadDays всегда должно быть null.
-// В расписании недели offloadDays — это массив разгрузочных дней.
-// Но в "снимке дня" (override) задача уже конкретная, её не надо
-// ещё куда-то выносить, поэтому offloadDays:null.
-//
-// Возвращает { ov, task }.
+// Гарантирует, что в override дня dateKey существует задача taskId.
+// Если override ещё не создан — создаём через ensureOverrideForDate().
+// Если задачи нет внутри дня — ищем её в недельном расписании по id
+// и добавляем с прогрессом 0.
+// Возвращаем { ov, task }.
 
 import ensureOverrideForDate from "./ensureOverrideForDate.js";
+import { loadSchedule, saveDayOverride } from "../data/repo.js";
 
-function normBaseTask(t, taskId){
+function normBaseTask(src, taskId){
   return {
-    id: String((t && t.id) || taskId || ""),
-    title: String(t && t.title ? t.title : "Без названия"),
-    minutes: Math.max(0, Number(t && t.minutes || 0) || 0),
+    id: String((src && src.id) || taskId || ""),
+    title: String(src && src.title ? src.title : "Без названия"),
+    minutes: Math.max(0, Number(src && src.minutes || 0) || 0),
     donePercent: 0,
     done: false,
-    offloadDays: null // В override всегда null по новой доменной модели
+    offloadDays: null,
+    meta: src && src.meta && typeof src.meta==="object" ? src.meta : null
   };
 }
 
 export default async function ensureTaskInOverrideForDate({ dateKey, taskId }){
-  const ovRepo = await import("../adapters/smart/smart.override.repo.js");
-  const schRepo= await import("../adapters/smart/smart.schedule.repo.js");
-
-  const saveOv = ovRepo.saveOverride || ovRepo.save;
-  const loadS  = schRepo.loadSchedule || schRepo.load;
-
-  // 1. гарантируем override на дату
+  // 1. гарантируем день
   const ov = await ensureOverrideForDate(dateKey);
-  if(!Array.isArray(ov.tasks)) ov.tasks = [];
+  if (!Array.isArray(ov.tasks)) ov.tasks = [];
 
-  // 2. ищем задачу в override
-  let t = ov.tasks.find(x => String(x.id||"") === String(taskId||""));
-  if(t){
-    return { ov, task: t };
+  // 2. ищем задачу в самом дне
+  let task = ov.tasks.find(x => String(x.id||"") === String(taskId||""));
+  if (task) {
+    return { ov, task };
   }
 
-  // 3. если нет — ищем её в расписании недели по id
-  const schedule = await loadS();
+  // 3. ищем задачу в недельном расписании
+  const schedule = await loadSchedule();
   let found = null;
-  for(const weekdayKey of Object.keys(schedule||{})){
+  for (const weekdayKey of Object.keys(schedule||{})){
     const dayArr = Array.isArray(schedule[weekdayKey]) ? schedule[weekdayKey] : [];
-    for(const cand of dayArr){
-      if(String(cand.id||"") === String(taskId||"")){
+    for (const cand of dayArr){
+      if (String(cand.id||"") === String(taskId||"")){
         found = cand;
         break;
       }
     }
-    if(found) break;
+    if (found) break;
   }
 
-  // 4. создаём новую задачу в ov.tasks
-  t = normBaseTask(found, taskId);
-  ov.tasks.push(t);
+  // 4. добавляем новую задачу в день
+  task = normBaseTask(found, taskId);
+  ov.tasks.push(task);
 
-  await saveOv(ov);
-
-  return { ov, task: t };
+  await saveDayOverride(ov, "ensureTaskInOverrideForDate");
+  return { ov, task };
 }
