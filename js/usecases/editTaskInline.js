@@ -1,11 +1,11 @@
 // js/usecases/editTaskInline.js
-// Редактирование задачи для КОНКРЕТНОЙ ДАТЫ.
-// Мы правим только override дня, не глобальное расписание.
+// Инлайн-правка задачи (название и длительность) для конкретной даты.
+// Это НЕ правка расписания всей недели, только снимка дня (override).
 
 import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
 import { saveDayOverride } from "../data/repo.js";
 
-export async function editTaskInline({ dateKey, taskId, patch }) {
+export default async function editTaskInline({ dateKey, taskId, patch }){
   if (!dateKey || !taskId) return;
 
   const { ov, task } = await ensureTaskInOverrideForDate({ dateKey, taskId });
@@ -14,7 +14,6 @@ export async function editTaskInline({ dateKey, taskId, patch }) {
     if (typeof patch.title === "string") {
       task.title = patch.title;
     }
-
     if (
       typeof patch.minutes === "number" &&
       !Number.isNaN(patch.minutes) &&
@@ -26,5 +25,3 @@ export async function editTaskInline({ dateKey, taskId, patch }) {
 
   await saveDayOverride(ov, "editTaskInline");
 }
-
-export default editTaskInline;

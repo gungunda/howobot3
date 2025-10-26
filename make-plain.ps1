@@ -1,110 +1,141 @@
 # make-plain.ps1
-# Генератор "простыни" для ChatGPT.
-# Делает один большой текстовый snapshot проекта на основе FILES_WHITELIST.txt.
+# Bundle generator for the project.
+# Output format:
+#   1) FILE_INDEX_START ... FILE_INDEX_END
+#   2) then all file contents, each preceded by // /relative/path
 
-# 1. Определяем корень проекта = папка, где лежит этот скрипт
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $ScriptDir
+# ---------------------------
+# Config
+# ---------------------------
 
-# 2. Входные и выходные пути
-$WhitelistPath = Join-Path $ScriptDir "FILES_WHITELIST.txt"
+$whitelistPath = "FILES_WHITELIST.txt"
 
-# Папка, куда мы будем сохранять результат
-$OutDir = Join-Path $ScriptDir "ChatGPT"
-if (!(Test-Path $OutDir)) {
-    New-Item -ItemType Directory -Path $OutDir | Out-Null
+# rootDir = folder where this script is located
+$rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $rootDir
+
+# output filename: bundle_YYYYMMDD_HHmmss.txt
+$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$outFile   = "./chatgpt/bundle_${timestamp}.txt"
+
+# ---------------------------
+# Helper: normalize path like C:\proj\js\app.js
+# into /js/app.js
+# ---------------------------
+function Normalize-RelPath {
+    param($absPath, $rootDir)
+
+    $full = Resolve-Path $absPath | Select-Object -ExpandProperty Path
+    $rel  = $full.Substring($rootDir.Length).TrimStart("\","/")
+
+    # convert backslashes to forward slashes
+    $rel  = $rel -replace "\\","/"
+
+    return "/" + $rel
 }
 
-# Имя выходного файла
-# Вариант А: всегда один и тот же
-#$OutFile = Join-Path $OutDir "bundle.txt"
+# ---------------------------
+# Step 1. Read whitelist and collect all files
+# ---------------------------
 
-# Вариант Б: с таймстампом, чтобы не затирать старые версии
-$timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-$OutFile = Join-Path $OutDir ("bundle_" + $timestamp + ".txt")
-
-# 3. Читаем вайтлист
-if (!(Test-Path $WhitelistPath)) {
-    Write-Host "FILES_WHITELIST.txt not found!"
+if (!(Test-Path $whitelistPath)) {
+    Write-Error "FILES_WHITELIST.txt not found"
     exit 1
 }
 
-$RawList = Get-Content $WhitelistPath
+$collectedFiles = @()
 
-# Фильтруем:
-# - обрезаем пробелы
-# - убираем пустые строки
-# - убираем строки, начинающиеся с '#'
-$Targets = $RawList |
-    ForEach-Object { $_.Trim() } |
-    Where-Object { $_ -ne "" } |
-    Where-Object { -not ($_.StartsWith("#")) }
+Get-Content $whitelistPath | ForEach-Object {
+    $line = $_.Trim()
 
-# 4. Функция: получить список файлов по записи ("js", "index.html", "assets/*", и т.д.)
-function Expand-Target($t) {
-    $FullPath = Join-Path $ScriptDir $t
+    # skip comments and empty lines
+    if ($line -eq "" -or $line.StartsWith("#")) {
+        return
+    }
 
-    if (Test-Path $FullPath) {
-        # Если это директория → рекурсивно собрать все файлы внутри
-        if ((Get-Item $FullPath).PSIsContainer) {
-            return Get-ChildItem $FullPath -Recurse -File
+    # allow entries like:
+    #   js
+    #   js/*
+    #   index.html
+    #   assets
+    #   assets/*
+    #
+    # If it's a folder -> include all files inside recursively.
+    # If it's a file   -> include just that file.
+
+    $cleanLine = $line
+    if ($cleanLine.EndsWith("/*")) {
+        $cleanLine = $cleanLine.Substring(0, $cleanLine.Length - 2)
+    }
+
+    $fullPath = Join-Path $rootDir $cleanLine
+
+    if (Test-Path $fullPath) {
+
+        if (Test-Path $fullPath -PathType Container) {
+            # directory -> all files recursively
+            $filesInDir = Get-ChildItem -Path $fullPath -Recurse -File |
+                          Select-Object -ExpandProperty FullName
+            $collectedFiles += $filesInDir
         }
         else {
-            # это файл
-            return Get-Item $FullPath
+            # single file
+            $collectedFiles += (
+                Resolve-Path $fullPath | Select-Object -ExpandProperty Path
+            )
         }
+
+    } else {
+        Write-Warning "Path from whitelist not found: $line"
     }
-    else {
-        # Поддержка шаблонов вроде "js/*" (глоб)
-        $DirPart  = Split-Path $t
-        $FileMask = Split-Path $t -Leaf
-
-        $BaseDirFull = Join-Path $ScriptDir $DirPart
-        if (Test-Path $BaseDirFull -PathType Container) {
-            return Get-ChildItem $BaseDirFull -Recurse -File -Filter $FileMask
-        }
-    }
-
-    return @() # если не нашли ничего
 }
 
-# 5. Собираем полный список файлов (объекты FileInfo)
-$FileList = @()
-foreach ($t in $Targets) {
-    $FileList += Expand-Target $t
+# dedupe + sort (by relative path for stable order)
+$collectedFiles = $collectedFiles |
+    Sort-Object -Unique
+
+# we will also prepare normalized relative paths once
+$relPaths = $collectedFiles | ForEach-Object {
+    Normalize-RelPath $_ $rootDir
 }
 
-# Убираем дубликаты по полному пути
-$FileList = $FileList | Sort-Object FullName -Unique
+# ---------------------------
+# Step 2. Build FILE_INDEX header
+# ---------------------------
 
-# 6. Пишем результат
-# Формат:
-# ---FILE-START---
-# PATH: relative/path/file.js
-# <содержимое>
-# ---FILE-END---
+$indexHeaderLines = @()
+$indexHeaderLines += "FILE_INDEX_START"
+$indexHeaderLines += $relPaths
+$indexHeaderLines += "FILE_INDEX_END"
 
-# Для понятного относительного пути уберём $ScriptDir из начала
-function To-RelativePath($full) {
-    return ($full.FullName).Substring($ScriptDir.Length).TrimStart('\','/')
+$indexHeaderText = ($indexHeaderLines -join "`r`n")
+
+# ---------------------------
+# Step 3. Build bodies
+# ---------------------------
+
+$bodyBuilder = New-Object System.Collections.Generic.List[string]
+
+foreach ($absPath in $collectedFiles) {
+    $rel = Normalize-RelPath $absPath $rootDir
+
+    $bodyBuilder.Add("")
+    $bodyBuilder.Add("// " + $rel)
+
+    $fileContent = Get-Content -Raw -Encoding UTF8 $absPath
+    $bodyBuilder.Add($fileContent)
 }
 
-# Создаём/очищаем файл вывода
-"" | Out-File -FilePath $OutFile -Encoding UTF8
+$bodyText = ($bodyBuilder -join "`r`n")
 
-foreach ($f in $FileList) {
-    $rel = To-RelativePath $f
+# ---------------------------
+# Step 4. Combine and write out
+# ---------------------------
 
-    # читаем содержимое
-    $content = Get-Content $f.FullName -Raw -ErrorAction SilentlyContinue
+$finalText = $indexHeaderText + "`r`n`r`n" + $bodyText + "`r`n"
 
-    # Записываем блок
-    Add-Content -Path $OutFile -Value "---FILE-START---"
-    Add-Content -Path $OutFile -Value ("PATH: " + $rel)
-    Add-Content -Path $OutFile -Value $content
-    Add-Content -Path $OutFile -Value "---FILE-END---"
-    Add-Content -Path $OutFile -Value ""  # пустая строка-разделитель
-}
+# write as UTF-8 without BOM
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($outFile, $finalText, $utf8NoBom)
 
-Write-Host "Done."
-Write-Host "Saved to $OutFile"
+Write-Host ("Done. File created: " + $outFile)

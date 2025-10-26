@@ -1,20 +1,12 @@
 // js/usecases/deleteTaskFromSchedule.js
-// FIX: no imports from ../app.js. Use smart repo directly.
-export default async function deleteTaskFromSchedule({ weekday, taskId }){
-  const repo = await import("../adapters/smart/smart.schedule.repo.js");
-  const load = repo.loadSchedule || repo.load || (repo.default && repo.default.loadSchedule);
-  const save = repo.saveSchedule || repo.save || (repo.default && repo.default.saveSchedule);
-  if (typeof load !== "function" || typeof save !== "function") {
-    throw new Error("[deleteTaskFromSchedule] schedule repo missing load/save");
-  }
+// Удалить задачу из недельного расписания.
+import { loadSchedule, saveSchedule } from "../data/repo.js";
 
-  const s = await load();
-  const arr = Array.isArray(s[weekday]) ? s[weekday] : [];
-  const idx = arr.findIndex(x => x.id === taskId);
-  if (idx >= 0) {
-    arr.splice(idx, 1);
-    await save(s);
-    return true;
-  }
-  return false;
+export default async function deleteTaskFromSchedule({ weekdayKey, taskId }){
+  const sched = await loadSchedule();
+  const arr = Array.isArray(sched[weekdayKey]) ? sched[weekdayKey] : [];
+  const filtered = arr.filter(t => String(t.id||"") !== String(taskId||""));
+  sched[weekdayKey] = filtered;
+  await saveSchedule(sched, "deleteTaskFromSchedule");
+  return sched;
 }

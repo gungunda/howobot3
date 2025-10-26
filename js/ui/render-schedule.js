@@ -1,91 +1,171 @@
 // js/ui/render-schedule.js
-// Убедимся, что data-dateKey всегда выставлен (сохранение handlers корректно читает дату).
 
-import { clear } from "./helpers.js";
-import { minutesToStr } from "../utils/format-utils.js";
+import * as repo from "../data/repo.js";
 
-export default function renderSchedule(root, { dateKey, tasks }){
-  if(!root){
-    root=document.getElementById("schedule");
-    if(!root){
-      const app=document.getElementById("app")||document.body;
-      root=document.createElement("div");
-      root.id="schedule";
-      app.appendChild(root);
+const WEEK_ORDER = [
+  ["monday", "Понедельник"],
+  ["tuesday", "Вторник"],
+  ["wednesday", "Среда"],
+  ["thursday", "Четверг"],
+  ["friday", "Пятница"],
+  ["saturday", "Суббота"],
+  ["sunday", "Воскресенье"]
+];
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// обычный просмотр задачи (без редактирования)
+function renderTaskRowView(task) {
+  const offloadStr = Array.isArray(task.offloadDays)
+    ? task.offloadDays.join(", ")
+    : "";
+
+  return `
+    <div class="task-item"
+         data-task-id="${escapeHtml(task.id)}"
+         data-offload-days="${escapeHtml(offloadStr)}">
+      <div class="task-line">
+        <div class="task-line-main">
+          <span class="task-title">${escapeHtml(task.title)}</span>
+          <span class="task-minutes">${Number(task.minutes) || 0} мин</span>
+        </div>
+        <div class="task-line-actions">
+          <button class="week-edit" type="button" title="Редактировать">✎</button>
+          <button class="week-del"  type="button" title="Удалить">🗑</button>
+        </div>
+      </div>
+      <div class="task-offload">
+        ${offloadStr ? `Разгрузка: ${escapeHtml(offloadStr)}` : ""}
+      </div>
+    </div>
+  `;
+}
+
+// режим редактирования / добавления
+function renderTaskRowEdit(editState) {
+  // editState = { weekday, taskId, title, minutes, offloadDays }
+  const isNew = !editState.taskId;
+  const offSet = new Set(editState.offloadDays || []);
+
+  // чекбоксы выбора дней разгрузки
+  const checkboxesHtml = WEEK_ORDER.map(([wdKey, wdLabel]) => {
+    const checked = offSet.has(wdKey) ? "checked" : "";
+    return `
+      <label class="offload-opt">
+        <input class="week-offload-checkbox"
+               type="checkbox"
+               value="${wdKey}"
+               ${checked}/>
+        ${wdLabel}
+      </label>
+    `;
+  }).join("");
+
+  return `
+    <div class="task-item editing"
+         data-task-id="${isNew ? "NEW" : escapeHtml(editState.taskId)}">
+      <div class="task-edit-block">
+        <div class="task-edit-main">
+          <input class="week-edit-title"
+                 type="text"
+                 value="${escapeHtml(editState.title)}"
+                 placeholder="Название предмета"/>
+          <input class="week-edit-minutes"
+                 type="number"
+                 min="0"
+                 value="${Number(editState.minutes) || 0}"
+                 style="width:4em"/>
+        </div>
+
+        <div class="task-edit-actions">
+          <button class="week-save"   type="button">Сохранить</button>
+          <button class="week-cancel" type="button">Отмена</button>
+        </div>
+      </div>
+
+      <div class="task-offload-editor">
+        <div class="hint small muted">Дни разгрузки:</div>
+        <div class="offload-list">
+          ${checkboxesHtml}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// один день недели целиком
+function renderDayBlock(weekdayKey, weekdayLabel, tasks, scheduleEdit) {
+  // tasks — массив задач для этого дня (из расписания)
+  // scheduleEdit — state.scheduleEdit или null
+
+  let rowsHtml = "";
+
+  for (const t of tasks) {
+    if (
+      scheduleEdit &&
+      scheduleEdit.weekday === weekdayKey &&
+      scheduleEdit.taskId === t.id
+    ) {
+      // редактируем именно эту задачу
+      rowsHtml += renderTaskRowEdit(scheduleEdit);
+    } else {
+      rowsHtml += renderTaskRowView(t);
     }
   }
-  clear(root);
-  const wrap=document.createElement("div");
-  wrap.className="section card schedule";
-  root.appendChild(wrap);
 
-  const header=document.createElement("div");
-  header.className="schedule-header";
-  header.innerHTML = `
-    <div class="schedule-title">Домашняя работа ${dateKey}</div>
-    <div class="schedule-actions">
-      <button id="open-week-editor" type="button">Редактировать расписание</button>
-      <button id="reset-day-btn" type="button">Сбросить день</button>
-    </div>`;
-  wrap.appendChild(header);
-
-  const list=document.createElement("div");
-  list.className="task-list";
-  wrap.appendChild(list);
-
-  if(!Array.isArray(tasks)||!tasks.length){
-    const empty=document.createElement("div");
-    empty.className="muted";
-    empty.textContent="Нет задач";
-    list.appendChild(empty);
-    root.dataset.dateKey = dateKey || "";
-    return root;
+  // если добавляем новую задачу (taskId === null),
+  // и этот день совпадает с scheduleEdit.weekday — рисуем форму внизу
+  if (
+    scheduleEdit &&
+    scheduleEdit.weekday === weekdayKey &&
+    !scheduleEdit.taskId
+  ) {
+    rowsHtml += renderTaskRowEdit(scheduleEdit);
   }
 
-  for(const t of tasks){
-    const item=document.createElement("div");
-    item.className="task-item";
-    item.dataset.taskId = t.id ?? "";
+  return `
+    <div class="week-day card" data-weekday="${weekdayKey}">
+      <div class="week-day-head">
+        <div class="week-day-title">${escapeHtml(weekdayLabel)}</div>
+        <button class="week-add" type="button" title="Добавить">＋</button>
+      </div>
 
-    const left=document.createElement("div");
-    left.style.display="flex"; left.style.alignItems="center"; left.style.gap="8px";
-
-    const cb=document.createElement("input");
-    cb.type="checkbox";
-    cb.className="task-done";
-    cb.checked=!!t.done || (t.donePercent>=100);
-
-    const title=document.createElement("span");
-    title.className="task-title";
-    title.textContent = `(${t.donePercent||0}%) ${t.title || "Без названия"}`;
-
-    left.appendChild(cb); left.appendChild(title);
-
-    const right=document.createElement("div");
-    right.className="task-controls";
-
-    const minus=document.createElement("button");
-    minus.className="task-pct-minus";
-    minus.textContent="−10%";
-
-    const plus=document.createElement("button");
-    plus.className="task-pct-plus";
-    plus.textContent="+10%";
-
-    const time=document.createElement("span");
-    time.className="badge";
-    time.title="План";
-    time.textContent = minutesToStr(t.minutes||0);
-
-    const edit=document.createElement("button");
-    edit.className="task-edit";
-    edit.textContent="✎";
-
-    right.append(minus,plus,time,edit);
-    item.append(left,right);
-    list.appendChild(item);
-  }
-
-  root.dataset.dateKey = dateKey || "";
-  return root;
+      <div class="week-day-tasks">
+        ${
+          rowsHtml ||
+          `<div class="week-day-empty muted small">Нет задач</div>`
+        }
+      </div>
+    </div>
+  `;
 }
+
+export async function updateScheduleView(state) {
+  // ищем контейнер, куда надо рендерить список дней недели
+  const root = document.querySelector('[data-view="schedule"] [data-week]')
+    || document.querySelector('[data-view="schedule"] .week-grid');
+
+  if (!root) {
+    console.warn("updateScheduleView: no [data-week] container");
+    return;
+  }
+
+  // подгружаем текущее расписание недели
+  const sched = await repo.loadSchedule();
+
+  // собираем карточки Пн..Вс
+  let fullHtml = "";
+  for (const [wdKey, wdLabel] of WEEK_ORDER) {
+    const dayTasks = Array.isArray(sched[wdKey]) ? sched[wdKey] : [];
+    fullHtml += renderDayBlock(wdKey, wdLabel, dayTasks, state.scheduleEdit);
+  }
+
+  root.innerHTML = fullHtml;
+}
+
+export default { updateScheduleView };

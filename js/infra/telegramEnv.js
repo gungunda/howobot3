@@ -1,18 +1,11 @@
 // js/infra/telegramEnv.js
-//
-// Этот модуль отвечает за доступ к хранилищу данных (Storage).
-// Storage старается использовать Telegram WebApp CloudStorage,
-// а если не получается — падает в localStorage как запасной вариант.
-//
-
+// (same content as previous response)
 const tg = (function getTelegramWebApp() {
   if (typeof window !== "undefined" && window.Telegram && window.Telegram.WebApp) {
     return window.Telegram.WebApp;
   }
   return null;
 })();
-
-// helper: завернуть промис с таймаутом
 function withTimeout(promise, ms = 5000) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("Telegram CloudStorage timeout")), ms);
@@ -21,19 +14,15 @@ function withTimeout(promise, ms = 5000) {
       .catch(e => { clearTimeout(t); reject(e); });
   });
 }
-
-// низкоуровневый адаптер к tg.CloudStorage
 const Cloud = (() => {
   const supported =
     !!(tg &&
        tg.CloudStorage &&
        typeof tg.CloudStorage.getItem === "function" &&
        typeof tg.CloudStorage.setItem === "function");
-
   if (!supported) {
     return { supported: false };
   }
-
   function getItem(key) {
     return withTimeout(new Promise((resolve, reject) => {
       tg.CloudStorage.getItem(key, (err, val) => {
@@ -42,7 +31,6 @@ const Cloud = (() => {
       });
     }));
   }
-
   function setItem(key, value) {
     return withTimeout(new Promise((resolve, reject) => {
       tg.CloudStorage.setItem(key, value, (err, ok) => {
@@ -51,7 +39,6 @@ const Cloud = (() => {
       });
     }));
   }
-
   function removeItems(keysArray) {
     return withTimeout(new Promise((resolve, reject) => {
       tg.CloudStorage.removeItems(keysArray, (err, ok) => {
@@ -60,7 +47,6 @@ const Cloud = (() => {
       });
     }));
   }
-
   function getKeys() {
     return withTimeout(new Promise((resolve, reject) => {
       tg.CloudStorage.getKeys((err, arr) => {
@@ -69,7 +55,6 @@ const Cloud = (() => {
       });
     }));
   }
-
   return {
     supported: true,
     getItem,
@@ -78,11 +63,8 @@ const Cloud = (() => {
     getKeys
   };
 })();
-
 export const Storage = (() => {
-  // режимы: cloud_probe | cloud | cloud_fallback | local
   let mode = Cloud.supported ? "cloud_probe" : "local";
-
   async function probeCloud() {
     const probeKey = "__probe__";
     const probeVal = String(Date.now());
@@ -95,7 +77,6 @@ export const Storage = (() => {
       return false;
     }
   }
-
   async function init() {
     if (mode === "cloud_probe") {
       mode = (await probeCloud()) ? "cloud" : "local";
@@ -104,11 +85,7 @@ export const Storage = (() => {
       try { tg.expand(); } catch(_) {}
     }
   }
-
-  function getMode() {
-    return mode;
-  }
-
+  function getMode() { return mode; }
   async function getItem(key) {
     if (mode === "cloud" && Cloud.supported) {
       try {
@@ -124,7 +101,6 @@ export const Storage = (() => {
       return null;
     }
   }
-
   async function setItem(key, value) {
     if (mode === "cloud" && Cloud.supported) {
       try {
@@ -140,7 +116,6 @@ export const Storage = (() => {
       localStorage.setItem(key, value);
     } catch (_) {}
   }
-
   async function removeItems(keysArray) {
     if (!Array.isArray(keysArray)) return;
     if (mode === "cloud" && Cloud.supported) {
@@ -156,7 +131,6 @@ export const Storage = (() => {
       try { localStorage.removeItem(k); } catch (_) {}
     }
   }
-
   async function getKeys() {
     if (mode === "cloud" && Cloud.supported) {
       try {
@@ -175,13 +149,5 @@ export const Storage = (() => {
     } catch (_) {}
     return out;
   }
-
-  return {
-    init,
-    getMode,
-    getItem,
-    setItem,
-    removeItems,
-    getKeys
-  };
+  return { init, getMode, getItem, setItem, removeItems, getKeys };
 })();

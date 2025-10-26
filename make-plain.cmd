@@ -1,13 +1,8 @@
-:: make-plain.cmd
-:: Запускает make-plain.ps1 для генерации текстовой простыни проекта.
-
 @echo off
-setlocal
+REM make-plain.cmd
+REM Запускает make-plain.ps1 и генерит bundle_YYYYMMDD_HHmmss.txt
 
-REM Определяем путь к этому .cmd (т.е. корень репозитория)
-set SCRIPT_DIR=%~dp0
-
-REM Включаем исполнение PowerShell-скриптов локально (только для этой сессии)
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%make-plain.ps1"
-
-endlocal
+powershell -ExecutionPolicy Bypass -File "%~dp0make-plain.ps1"
+echo.
+echo Bundle generated.
+pause
