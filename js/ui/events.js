@@ -7,32 +7,27 @@ import * as repo from "../data/repo.js";
   - state.dashboardEdit         -> какая задача сейчас редактируется на дашборде
   - state.scheduleEdit          -> какая задача редактируется в расписании недели
 
-  Разметка, на которую мы опираемся (из index.html):
-    <button data-nav="dashboard">Сегодня</button>
-    <button data-nav="schedule">Расписание</button>
-    <button data-nav="calendar">Календарь</button>
-
-    <section class="view" data-view="dashboard">...</section>
-    <section class="view" data-view="schedule">...</section>
-    <section class="view" data-view="calendar">...</section>
-
-  Главные изменения в этой версии:
-  1. buildDayViewModel() больше НЕ сохраняет override автоматически.
-     Мы просто готовим данные для показа.
-     Override создаётся только когда пользователь реально вносит правки
+  Главные принципы:
+  1. buildDayViewModel() НЕ сохраняет override автоматически.
+     Мы только показываем данные. Override создаётся ТОЛЬКО по действию
      (toggle чекбокса, +10%, редактирование, сброс дня).
-  2. refreshScheduleEditor() и refreshCalendar() обёрнуты в try/catch,
-     чтобы падение динамического импорта не ломало переключение вкладок.
-  3. При кликах на "Расписание" / "Календарь" мы ВСЕГДА переключаемся
-     на нужную вкладку через showViewSafe(...), даже если не удалось
-     дорендерить контент.
+  2. После любого действия мы вызываем refreshDashboard(state),
+     чтобы заново нарисовать дашборд. НО! Слушатели кликов
+     (bindDashboard) вешаются только один раз в initUI().
+
+  ИМПОРТЫ ОТРИСОВКИ:
+  - Календарь   -> view-calendar.js   (ранее назывался render-calendar.js)
+  - Расписание  -> view-schedule.js   (ранее назывался render-schedule.js)
+  - Дашборд     -> view-dashboard.js
+
+  render-schedule.js и view-week.js больше не используются
+  и могут быть удалены.
 */
 
 
-// ===================== утилиты даты =====================
+// ===================== УТИЛИТЫ ДАТЫ =====================
 
 function dateFromKey(key) {
-  // "2025-10-24" -> Date(2025,9,24)
   const [y, m, d] = String(key || "").split("-");
   return new Date(Number(y), Number(m) - 1, Number(d));
 }
@@ -44,14 +39,12 @@ function keyFromDate(d) {
   return `${y}-${m}-${day}`;
 }
 
-// addDaysToDateKey('2025-10-24', 1) -> '2025-10-25'
 function addDaysToDateKey(dateKey, n) {
   const d = dateFromKey(dateKey);
   d.setDate(d.getDate() + Number(n || 0));
   return keyFromDate(d);
 }
 
-// weekdayKeyFromDateKey('2025-10-24') -> 'friday'
 function weekdayKeyFromDateKey(dateKey) {
   const d = dateFromKey(dateKey);
   const map = [
@@ -66,8 +59,7 @@ function weekdayKeyFromDateKey(dateKey) {
   return map[d.getDay()] || "monday";
 }
 
-// предыдущий день недели в терминах строк
-// (нужно для оффлоад-задач)
+// предыдущий будний день (для дедлайна оффлоад-задач)
 function prevWeekdayKey(dayKey) {
   const prevMap = {
     monday: "sunday",
@@ -81,7 +73,7 @@ function prevWeekdayKey(dayKey) {
   return prevMap[dayKey] || "sunday";
 }
 
-// найдёт ближайшую ВПЕРЁД дату (включая сегодня),
+// найдёт ближайшую вперёд дату (включая сегодня),
 // у которой weekday === weekdayKey
 function nextDateKeyForWeekday(currentDateKey, weekdayKey) {
   let d = dateFromKey(currentDateKey);
@@ -92,7 +84,6 @@ function nextDateKeyForWeekday(currentDateKey, weekdayKey) {
     }
     d.setDate(d.getDate() + 1);
   }
-  // fallback
   return currentDateKey;
 }
 
@@ -101,7 +92,7 @@ function todayKey() {
 }
 
 
-// ===================== статистика по задачам =====================
+// ===================== СТАТИСТИКА ПО ЗАДАЧАМ =====================
 
 async function statsFor(tasks) {
   let totalMinutes = 0;
@@ -125,7 +116,7 @@ async function statsFor(tasks) {
 }
 
 
-// ===================== нормализация задачи для UI =====================
+// ===================== НОРМАЛИЗАЦИЯ ЗАДАЧИ ДЛЯ UI =====================
 
 function normalizeTaskForDay(t) {
   const pct = Math.max(
@@ -136,6 +127,8 @@ function normalizeTaskForDay(t) {
   let offloadDays = null;
   if (Array.isArray(t?.offloadDays)) {
     offloadDays = [...t.offloadDays];
+    // оффлоад-задачи в расписании имеют offloadDays,
+    // но в override (снимке дня) мы их храним уже без offloadDays
   }
 
   return {
@@ -150,19 +143,10 @@ function normalizeTaskForDay(t) {
 }
 
 
-// ===================== buildDayViewModel(dateKey) =====================
+// ===================== МОДЕЛЬ ДНЯ ДЛЯ ДАШБОРДА =====================
 //
-// Возвращает набор задач для показа на дашборде:
-//   coreTasks    — задачи "на завтра" для этой даты
-//   offloadTasks — разгрузочные задачи (домашки, которые надо вынести)
-//
-// ВАЖНО: мы НЕ СОЗДАЁМ override автоматически.
-// Просто читаем:
-//   - schedule (недельный шаблон)
-//   - override(dateKey), если он есть
-// Если override пустой/нет → строим coreTasks "виртуально"
-// из расписания, но НЕ сохраняем.
-//
+// НЕ СОЗДАЁТ override сама по себе.
+// Просто строит то, что надо показать.
 async function buildDayViewModel(dateKey) {
   const schedule = await repo.loadSchedule();
 
@@ -172,11 +156,8 @@ async function buildDayViewModel(dateKey) {
   // CORE TASKS
   let coreTasks;
   if (ov && Array.isArray(ov.tasks) && ov.tasks.length) {
-    // уже есть override со своим прогрессом
     coreTasks = ov.tasks.map(normalizeTaskForDay);
   } else {
-    // override ещё не делали → просто показать,
-    // что Лёше надо делать "на завтра"
     const tomorrowKey = addDaysToDateKey(dateKey, 1);
     const wdTomorrow = weekdayKeyFromDateKey(tomorrowKey);
 
@@ -194,13 +175,6 @@ async function buildDayViewModel(dateKey) {
   }
 
   // OFFLOAD TASKS
-  // Логика: если у задачи в расписании есть offloadDays,
-  // и текущий день недели (wdToday) входит в этот список,
-  // то эта задача появляется как "разгрузка".
-  //
-  // Прогресс разгрузочной задачи хранится не обязательно в сегодняшнем override.
-  // Он может быть в override другого дня — дедлайна.
-  //
   const offloadTasks = [];
 
   for (const mainWeekday of Object.keys(schedule || {})) {
@@ -212,17 +186,17 @@ async function buildDayViewModel(dateKey) {
       const off = Array.isArray(task.offloadDays) ? task.offloadDays : [];
       if (!off.includes(wdToday)) continue;
 
-      // не дублировать задачу, если она уже в coreTasks
+      // не дублировать с coreTasks
       const alreadyCore = coreTasks.find(
         ct => ct.id === String(task.id || "")
       );
       if (alreadyCore) continue;
 
-      // дедлайн — это предыдущий weekday от mainWeekday
+      // дедлайн — предыдущий будний день
       const deadlineWeekday = prevWeekdayKey(mainWeekday);
       const targetDateKey = nextDateKeyForWeekday(dateKey, deadlineWeekday);
 
-      // пробуем взять override дедлайна, чтобы показать реальный прогресс разгрузки
+      // попытка найти прогресс в override целевой даты
       const ovTarget = await repo.loadDayOverride(targetDateKey);
 
       let match = null;
@@ -239,10 +213,7 @@ async function buildDayViewModel(dateKey) {
           })
         : normalizeTaskForDay(task);
 
-      // помечаем, от какого буднего дня расписания эта задача идёт
-      // это нам нужно затем, чтобы понять куда писать прогресс
-      norm.mainWeekday = mainWeekday;
-
+      norm.mainWeekday = mainWeekday; // важно для сохранения
       offloadTasks.push(norm);
     }
   }
@@ -251,34 +222,10 @@ async function buildDayViewModel(dateKey) {
 }
 
 
-// ===================== resolveTargetDateKeyForRow =====================
+// ===================== КАКОЙ ДЕНЬ МЕНЯЕМ ПРИ КЛИКЕ =====================
 //
-// Когда пользователь меняет прогресс / done у задачи,
-// нам надо понять, в КАКОЙ override-день писать изменения.
-//
-// core-задачи → override текущей даты.
-// offload-задачи → override дедлайна (см. логику выше).
-//
-// Эта функция определяет, В КАКОЙ ДЕНЬ нужно сохранять изменения
-// по задаче с дашборда.
-//
-// row — это .task-item
-// currentDateKey — это выбранный день на дашборде, например "2025-10-26"
-//
-// Логика:
-//  - Если задача обычная (source="core"), то всё пишем в currentDateKey.
-//    То есть прогресс и done хранятся в override текущего дня.
-//  - Если задача разгрузочная (source="offload"):
-//      она пришла из "другого" дня недели,
-//      и прогресс для неё должен жить в override того дедлайна,
-//      а НЕ текущего дня.
-//    Для этого нам нужно вычислить дедлайн-день по mainWeekday.
-//
-//    У нас уже была логика в buildDayViewModel:
-//      deadlineWeekday = prevWeekdayKey(mainWeekday)
-//      targetDateKey = nextDateKeyForWeekday(currentDateKey, deadlineWeekday)
-//
-//    Мы воспроизводим её здесь, чтобы получить тот же targetDateKey.
+// Для обычной задачи ("core") → пишем в override выбранного дня.
+// Для разгрузки ("offload") → пишем в override даты, которая является дедлайном.
 function resolveTargetDateKeyForRow(row, currentDateKey) {
   const source = row?.dataset?.source || "core";
   const mainWeekday = row?.dataset?.mainWeekday || "";
@@ -288,19 +235,18 @@ function resolveTargetDateKeyForRow(row, currentDateKey) {
   }
 
   if (source === "offload" && mainWeekday) {
-    // prevWeekdayKey и nextDateKeyForWeekday у нас уже есть в events.js выше.
     const deadlineWeekday = prevWeekdayKey(mainWeekday);
     return nextDateKeyForWeekday(currentDateKey, deadlineWeekday);
   }
 
-  // fallback
   return currentDateKey;
 }
 
 
-
-// ===================== обновление экранов =====================
-
+// ===================== ОБНОВЛЕНИЕ ДАШБОРДА =====================
+//
+// ВАЖНО: мы НЕ перевешиваем bindDashboard(state) при каждом обновлении.
+// Обработчики кликов вешаются один раз в initUI().
 async function refreshDashboard(state) {
   const { coreTasks, offloadTasks } = await buildDayViewModel(
     state.currentDateKey
@@ -319,15 +265,11 @@ async function refreshDashboard(state) {
     stats: st,
     dashboardEdit: state.dashboardEdit || null
   });
-
-  // После перерендера DOM перезаписан, поэтому мы вешаем события заново
-  bindDashboard(state);
 }
-
 
 async function refreshScheduleEditor(state) {
   try {
-    const m = await import("./render-schedule.js");
+    const m = await import("./view-schedule.js"); // <--- заменили render-schedule.js
     const updateScheduleView = m.updateScheduleView || m.default;
     await updateScheduleView(state);
   } catch (err) {
@@ -337,7 +279,7 @@ async function refreshScheduleEditor(state) {
 
 async function refreshCalendar(state) {
   try {
-    const m = await import("./render-calendar.js");
+    const m = await import("./view-calendar.js"); // <--- раньше было render-calendar.js
     const updateCalendarView = m.updateCalendarView || m.default;
     await updateCalendarView(state);
   } catch (err) {
@@ -346,20 +288,14 @@ async function refreshCalendar(state) {
 }
 
 
-// ===================== bindDashboard =====================
+// ===================== ОБРАБОТЧИКИ ДАШБОРДА =====================
 //
-// Вешаем обработчики на дашборд:
-// - кнопка "Редактировать расписание"
-// - кнопка "Сбросить день"
-// - +/-10%
-// - галочка done
-// - редактирование задачи core
-//
+// Слушатели кликов и чекбоксов. Вешаем ОДИН РАЗ.
 function bindDashboard(state) {
-  const root = document.querySelector("[data-dashboard-root]");
+  const root = document.querySelector('[data-view="dashboard"]');
   if (!root) return;
 
-  // Клики (плюс/минус, редактировать, сохранить, отмена, сброс дня, расписание)
+  // click-события (+/-10%, редактирование, сброс дня, открыть расписание)
   root.addEventListener("click", async (e) => {
     const dashRoot = document.querySelector("[data-dashboard-root]");
     const dateKey = dashRoot?.dataset.dateKey || state.currentDateKey;
@@ -371,7 +307,7 @@ function bindDashboard(state) {
       return;
     }
 
-    // сброс дня (жёстко пересобираем override под план)
+    // сброс дня
     if (e.target.closest('[data-action="reset-day"]')) {
       const m = await import("../usecases/resetToSchedule.js");
       const fn = m.default || m.resetToSchedule;
@@ -399,6 +335,8 @@ function bindDashboard(state) {
 
       const mod = await import("../usecases/adjustTaskPercentForDate.js");
       const fn = mod.default || mod.adjustTaskPercentForDate;
+
+      console.log("[bindDashboard] click +/-10%", { taskId, targetDateKey });
 
       try {
         await fn({
@@ -440,7 +378,7 @@ function bindDashboard(state) {
       return;
     }
 
-    // сохранить изменения из формы редактирования (только для core)
+    // сохранить изменения (только для core)
     const saveBtn = e.target.closest(".dash-save");
     if (saveBtn) {
       const row = saveBtn.closest(".task-item.editing");
@@ -450,7 +388,6 @@ function bindDashboard(state) {
       const { source, targetDateKey } = state.dashboardEdit || {};
 
       if (source !== "core") {
-        // если это offload — редактировать нельзя, просто закрываем
         state.dashboardEdit = null;
         await refreshDashboard(state);
         return;
@@ -492,7 +429,7 @@ function bindDashboard(state) {
     }
   });
 
-  // Чекбокс "сделано"
+  // change-события (чекбокс done)
   root.addEventListener("change", async (e) => {
     const cb = e.target.closest(".task-done");
     if (!cb) return;
@@ -510,6 +447,8 @@ function bindDashboard(state) {
     const mod = await import("../usecases/toggleTaskDoneForDate.js");
     const fn = mod.default || mod.toggleTaskDoneForDate;
 
+    console.log("[bindDashboard] checkbox change", { taskId, targetDateKey });
+
     try {
       await fn({ dateKey: targetDateKey, taskId });
     } catch (err) {
@@ -520,15 +459,9 @@ function bindDashboard(state) {
   });
 }
 
-// ===================== bindSchedule =====================
-//
-// Управление вкладкой "Расписание недели" (редактор шаблона):
-// - назад на дашборд
-// - добавить задачу в день недели
-// - редактировать задачу дня недели
-// - удалить задачу из дня недели
-// - сохранить изменения
-//
+
+// ===================== ОБРАБОТЧИКИ РАСПИСАНИЯ НЕДЕЛИ =====================
+
 function bindSchedule(state) {
   const view = document.querySelector('[data-view="schedule"]');
   if (!view) return;
@@ -541,7 +474,7 @@ function bindSchedule(state) {
       return;
     }
 
-    // добавить задачу в конкретный weekday
+    // добавить задачу
     const addBtn = e.target.closest(".week-add");
     if (addBtn) {
       const dayCard = e.target.closest(".week-day");
@@ -561,7 +494,7 @@ function bindSchedule(state) {
       return;
     }
 
-    // ✎ редактирование существующей задачи расписания
+    // ✎ редактирование в расписании
     const editBtn = e.target.closest(".week-edit");
     if (editBtn) {
       const row = editBtn.closest(".task-item");
@@ -571,10 +504,13 @@ function bindSchedule(state) {
       if (!weekday || !taskId) return;
 
       const titleNode = row.querySelector(".task-title");
-      const minutesNode = row.querySelector(".task-minutes");
+      const minutesNode = row.querySelector(".task-mins");
 
       const newTitle = titleNode ? titleNode.textContent.trim() : "";
-      const newMin = minutesNode ? Number(minutesNode.textContent) || 0 : 0;
+      // "30 мин" -> 30
+      const rawMinStr = minutesNode ? minutesNode.textContent.trim() : "0";
+      const rawNum = parseInt(rawMinStr, 10);
+      const newMin = Number.isFinite(rawNum) ? rawNum : 0;
 
       let offloadDays = [];
       const rawOff = row.getAttribute("data-offload-days");
@@ -620,7 +556,7 @@ function bindSchedule(state) {
       return;
     }
 
-    // сохранить (новая или отредактированная задача расписания)
+    // сохранить изменения (новая или редактируемая задача)
     const saveBtn = e.target.closest(".week-save");
     if (saveBtn) {
       const dayCard = e.target.closest(".week-day");
@@ -633,7 +569,7 @@ function bindSchedule(state) {
       const checkboxes = row.querySelectorAll(".week-offload-checkbox");
 
       const newTitle = titleInp ? titleInp.value : "";
-      const newMin = minInp ? Number(minInp.value) || 0 : 0;
+      const newMin   = minInp ? Number(minInp.value) || 0 : 0;
 
       const offloadDays = [];
       checkboxes.forEach(ch => {
@@ -644,9 +580,8 @@ function bindSchedule(state) {
 
       const taskId = row.dataset.taskId;
       if (!taskId || taskId === "NEW") {
-        // новая задача
         const addMod = await import("../usecases/addTaskToSchedule.js");
-        const addUC = addMod.default || addMod.addTaskToSchedule;
+        const addUC  = addMod.default || addMod.addTaskToSchedule;
         try {
           await addUC({
             weekdayKey: weekday,
@@ -660,9 +595,8 @@ function bindSchedule(state) {
           console.warn("addTaskToSchedule error", err);
         }
       } else {
-        // редактирование существующей задачи
         const editMod = await import("../usecases/editTaskInSchedule.js");
-        const editUC = editMod.default || editMod.editTaskInSchedule;
+        const editUC  = editMod.default || editMod.editTaskInSchedule;
         try {
           await editUC({
             weekday,
@@ -683,7 +617,7 @@ function bindSchedule(state) {
       return;
     }
 
-    // отмена редактирования расписания недели
+    // отмена редактирования расписания
     const cancelBtn = e.target.closest(".week-cancel");
     if (cancelBtn) {
       state.scheduleEdit = null;
@@ -694,13 +628,8 @@ function bindSchedule(state) {
 }
 
 
-// ===================== bindCalendar =====================
-//
-// Управление вкладкой "Календарь":
-// - назад на дашборд
-// - перелистывание месяцев
-// - выбор конкретной даты
-//
+// ===================== ОБРАБОТЧИКИ КАЛЕНДАРЯ =====================
+
 function bindCalendar(state) {
   const view = document.querySelector('[data-view="calendar"]');
   if (!view) return;
@@ -735,7 +664,7 @@ function bindCalendar(state) {
       return;
     }
 
-    // выбор даты в календаре
+    // выбор даты
     const cell = e.target.closest(".cal-day[data-date-key]");
     if (cell) {
       const pickedKey = cell.getAttribute("data-date-key");
@@ -760,16 +689,14 @@ function bindCalendar(state) {
 }
 
 
-// ===================== bindHeader =====================
-//
-// Навигация по верхним кнопкам, плюс выбор даты через input[type=date]
-//
+// ===================== ХЭДЕР / НАВИГАЦИЯ =====================
+
 function bindHeader(state) {
   const dateInput = document.querySelector("[data-date-input]");
   const todayBtn = document.querySelector('[data-action="today"]');
-  const navDash = document.querySelector('[data-nav="dashboard"]');
+  const navDash  = document.querySelector('[data-nav="dashboard"]');
   const navSched = document.querySelector('[data-nav="schedule"]');
-  const navCal = document.querySelector('[data-nav="calendar"]');
+  const navCal   = document.querySelector('[data-nav="calendar"]');
 
   // ручной выбор даты
   if (dateInput) {
@@ -806,7 +733,7 @@ function bindHeader(state) {
     });
   }
 
-  // навигация "Сегодня" (дашборд)
+  // навигация "Сегодня" / дашборд
   if (navDash) {
     navDash.addEventListener("click", async () => {
       await refreshDashboard(state);
@@ -818,7 +745,7 @@ function bindHeader(state) {
   if (navSched) {
     navSched.addEventListener("click", async () => {
       await refreshScheduleEditor(state);
-      showViewSafe("schedule"); // даже если render-schedule упал
+      showViewSafe("schedule");
     });
   }
 
@@ -826,24 +753,19 @@ function bindHeader(state) {
   if (navCal) {
     navCal.addEventListener("click", async () => {
       await refreshCalendar(state);
-      showViewSafe("calendar"); // даже если render-calendar упал
+      showViewSafe("calendar");
     });
   }
 }
 
 
-// ===================== showViewSafe =====================
-//
-// Безопасно показать нужную вкладку.
-// Если по какой-то причине секция не найдена,
-// мы просто не скрываем остальные, чтобы экран не "пропадал".
-//
+// ===================== ПЕРЕКЛЮЧЕНИЕ ВИДОВ =====================
+
 function showViewSafe(targetName) {
   const allViews = Array.from(document.querySelectorAll(".view"));
   const target = allViews.find(v => v.dataset.view === targetName);
 
   if (!target) {
-    // секции с таким именем нет -> не трогаем текущее отображение
     console.warn("showViewSafe: view not found:", targetName);
     return;
   }
@@ -856,7 +778,8 @@ function showViewSafe(targetName) {
 
 // ===================== initUI =====================
 //
-// Инициализируем state, вешаем слушатели, рисуем стартовый экран.
+// Создаёт state, один раз вешает обработчики,
+// потом делает первый рендер трёх вкладок.
 //
 export async function initUI() {
   const tk = todayKey();
@@ -870,20 +793,17 @@ export async function initUI() {
     scheduleEdit: null
   };
 
+  // навешиваем обработчики ОДИН РАЗ
   bindHeader(state);
   bindDashboard(state);
   bindSchedule(state);
   bindCalendar(state);
 
-  // Изначально прогружаем все три экрана,
-  // чтобы они заполнились данными.
+  // рисуем первоначальные экраны
   await refreshDashboard(state);
   await refreshScheduleEditor(state);
   await refreshCalendar(state);
 
-  // И показываем дашборд как стартовый.
+  // по умолчанию показываем дашборд
   showViewSafe("dashboard");
 }
-
-// иногда тесты/другой код могут импортировать
-export { bindDashboard };

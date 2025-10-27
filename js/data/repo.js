@@ -2,9 +2,8 @@
 // Единый репозиторий данных (расписание недели + снимки дней).
 // Всё приложение (usecases, UI) общается с данными только через этот слой.
 //
-// Сейчас Storage — это обёртка над localStorage или Telegram.WebApp.storage
-// (см. infra/telegramEnv.js). То есть здесь уже тот интерфейс, который
-// мы будем потом маппить на Telegram CloudStorage.
+// Storage — это прослойка над localStorage или Telegram WebApp CloudStorage.
+// (см. infra/telegramEnv.js)
 
 import { Storage } from "../infra/telegramEnv.js";
 import { DeviceId } from "../domain/id.js";
@@ -14,38 +13,24 @@ import { DeviceId } from "../domain/id.js";
 function safeParse(str, fallback) {
   if (!str || typeof str !== "string") return fallback;
   try {
-    const val = JSON.parse(str);
-    return val ?? fallback;
-  } catch {
+    return JSON.parse(str);
+  } catch (_) {
     return fallback;
   }
 }
 
-// где храним расписание недели
-const KEY_SCHEDULE = "planner.schedule.v1";
-
-// где храним "снимки дня" (override) по конкретной дате
-// пример ключа: planner.override.2025-10-26.v1
-function dayStorageKey(dateKey) {
-  return `planner.override.${dateKey}.v1`;
+function nowIso() {
+  return new Date().toISOString();
 }
 
-// Штамп метаданных. Это нужно для будущей синхронизации между девайсами.
-// meta.updatedAt — когда меняли
-// meta.deviceId  — кто менял
-// meta.userAction — что делали ("toggleDone", "adjustPercent", и т.д.)
+// meta:
+//   { createdAt, updatedAt, deviceId, userAction }
 function touchMeta(oldMeta, actionHint) {
-  const now = new Date().toISOString();
-  const dev = DeviceId.get();
   const base = (oldMeta && typeof oldMeta === "object") ? { ...oldMeta } : {};
-
-  if (!base.createdAt) {
-    base.createdAt = now;
-  }
-  base.updatedAt = now;
-  base.deviceId = dev || base.deviceId || null;
-  base.userAction = actionHint || "edit";
-
+  if (!base.createdAt) base.createdAt = nowIso();
+  base.updatedAt = nowIso();
+  base.deviceId = DeviceId.get();
+  if (actionHint) base.userAction = String(actionHint);
   return base;
 }
 
@@ -75,51 +60,7 @@ function stampSchedule(scheduleObj, actionHint) {
   const out = {};
   for (const wd of weekdays) {
     const arr = Array.isArray(scheduleObj[wd]) ? scheduleObj[wd] : [];
-    out[wd] = arr.map(task => {
-      const tCopy = { ...task };
-      tCopy.id = String(tCopy.id || "");
-      tCopy.title = String(tCopy.title || "Без названия");
-      tCopy.minutes = Math.max(0, Number(tCopy.minutes) || 0);
-      tCopy.offloadDays = Array.isArray(tCopy.offloadDays)
-        ? [...tCopy.offloadDays]
-        : [];
-      tCopy.meta = touchMeta(tCopy.meta, actionHint || "editSchedule");
-      return tCopy;
-    });
-  }
-  return out;
-}
-
-// -------------------- Schedule API --------------------
-//
-// Формат расписания недели, который возвращаем и принимаем:
-//
-// {
-//   monday:    [ { id, title, minutes, offloadDays[], meta? }, ... ],
-//   tuesday:   [ ... ],
-//   ...,
-//   sunday:    [ ... ]
-// }
-
-export async function loadSchedule() {
-  const raw = await Storage.getItem(KEY_SCHEDULE);
-
-  const blank = {
-    monday:    [],
-    tuesday:   [],
-    wednesday: [],
-    thursday:  [],
-    friday:    [],
-    saturday:  [],
-    sunday:    []
-  };
-
-  const parsed = safeParse(raw, blank);
-
-  // нормализация полей каждой задачи
-  for (const wd of Object.keys(blank)) {
-    const arr = Array.isArray(parsed[wd]) ? parsed[wd] : [];
-    parsed[wd] = arr.map(task => ({
+    out[wd] = arr.map(task => ({
       id: String(task?.id || ""),
       title: String(task?.title || "Без названия"),
       minutes: Math.max(0, Number(task?.minutes) || 0),
@@ -130,7 +71,44 @@ export async function loadSchedule() {
     }));
   }
 
-  return parsed;
+  return out;
+}
+
+// ------- ключи хранения -------
+const KEY_SCHEDULE = "planner.schedule.v1";
+function dayStorageKey(dateKey) {
+  // пример: planner.override.2025-10-26.v1
+  return `planner.override.${dateKey}.v1`;
+}
+
+
+// -------------------- PUBLIC API: расписание недели --------------------
+
+export async function loadSchedule() {
+  const raw = await Storage.getItem(KEY_SCHEDULE);
+  const parsed = safeParse(raw, {});
+
+  const weekdays = [
+    "monday","tuesday","wednesday","thursday","friday","saturday","sunday"
+  ];
+
+  const norm = {};
+  for (const wd of weekdays) {
+    const arr = Array.isArray(parsed[wd]) ? parsed[wd] : [];
+    norm[wd] = arr.map(task => ({
+      id: String(task?.id || ""),
+      title: String(task?.title || "Без названия"),
+      minutes: Math.max(0, Number(task?.minutes)||0),
+      offloadDays: Array.isArray(task?.offloadDays)
+        ? [...task.offloadDays]
+        : [],
+      meta: (task?.meta && typeof task.meta === "object")
+        ? task.meta
+        : null
+    }));
+  }
+
+  return norm;
 }
 
 export async function saveSchedule(scheduleObj, actionHint) {
@@ -139,61 +117,48 @@ export async function saveSchedule(scheduleObj, actionHint) {
   const stamped = stampSchedule(scheduleObj, actionHint);
   const json = JSON.stringify(stamped);
 
+  console.log("[repo.saveSchedule] save => key=", KEY_SCHEDULE, "payload =", stamped);
+
   await Storage.setItem(KEY_SCHEDULE, json);
   return true;
 }
 
-// -------------------- Day Override API --------------------
+
+// -------------------- PUBLIC API: снимок дня (override) --------------------
 //
-// Формат "снимка дня":
-//
+// Формат:
 // {
 //   dateKey: "2025-10-26",
 //   tasks: [
-//     {
-//       id: "math1",
-//       title: "Математика",
-//       minutes: 30,
-//       donePercent: 40,
-//       done: false,
-//       offloadDays: null, // в override всегда null
-//       meta: {...} | null
-//     },
+//     { id, title, minutes, donePercent, done, offloadDays:null, meta:{} },
 //     ...
 //   ],
-//   meta: {
-//     createdAt: "...",
-//     updatedAt: "...",
-//     deviceId: "...",
-//     userAction: "adjustPercent" | "toggleDone" | ...
-//   }
+//   meta: { createdAt, updatedAt, deviceId, userAction }
 // }
 
 export async function loadDayOverride(dateKey) {
   const k = dayStorageKey(dateKey);
   const raw = await Storage.getItem(k);
-  if (!raw) return null;
-
   const parsed = safeParse(raw, null);
-  if (!parsed || typeof parsed !== "object") return null;
 
-  const tasksArr = Array.isArray(parsed.tasks) ? parsed.tasks : [];
+  if (!parsed) return null;
 
-  const normTasks = tasksArr.map(t => {
-    const pct = Math.max(
-      0,
-      Math.min(100, Math.round(Number(t?.donePercent) || 0))
-    );
-    return {
-      id: String(t?.id || ""),
-      title: String(t?.title || ""),
-      minutes: Math.max(0, Number(t?.minutes) || 0),
-      donePercent: pct,
-      done: (typeof t?.done === "boolean") ? t.done : (pct >= 100),
-      offloadDays: null, // всегда null в override
-      meta: (t?.meta && typeof t.meta === "object") ? t.meta : null
-    };
-  });
+  const normTasks = Array.isArray(parsed.tasks)
+    ? parsed.tasks.map(task => ({
+        id: String(task?.id || ""),
+        title: String(task?.title || "Без названия"),
+        minutes: Math.max(0, Number(task?.minutes)||0),
+        donePercent: Math.max(
+          0,
+          Math.min(100, Math.round(Number(task?.donePercent)||0))
+        ),
+        done: Boolean(task?.done) || (Number(task?.donePercent)>=100),
+        offloadDays: null,
+        meta: (task?.meta && typeof task.meta === "object")
+          ? task.meta
+          : null
+      }))
+    : [];
 
   return {
     dateKey: String(parsed.dateKey || dateKey || ""),
@@ -213,6 +178,14 @@ export async function saveDayOverride(dayObj, actionHint) {
   const k = dayStorageKey(stamped.dateKey);
   const json = JSON.stringify(stamped);
 
+  console.log(
+    "[repo.saveDayOverride] saving override",
+    "dateKey=", stamped.dateKey,
+    "tasks.len=", stamped.tasks?.length ?? 0,
+    "storageKey=", k,
+    "payload=", stamped
+  );
+
   await Storage.setItem(k, json);
   return true;
 }
@@ -231,6 +204,7 @@ export async function listOverrideDates() {
     }
   }
 
+  console.log("[repo.listOverrideDates] keys =", keys, "dates =", out);
   return out;
 }
 

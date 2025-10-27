@@ -1,28 +1,3 @@
-// js/ui/view-dashboard.js
-// Чистый рендер дашборда (экран дня).
-// Здесь НЕТ логики сохранения. Только DOM.
-//
-// Модель, которую мы ждём:
-//
-// {
-//   dateKey: "2025-10-26",
-//   tasks:        [ { id,title,minutes,donePercent,done,source?,mainWeekday? }, ... ],
-//   offloadTasks: [ ... такие же объекты ... ],
-//   stats: {
-//     totalMinutes: number,
-//     doneMinutes: number,
-//     doneAvg: number // средний процент или средняя готовность
-//   },
-//   dashboardEdit: {
-//     taskId,
-//     source,         // "core" или "offload"
-//     mainWeekday,    // напр. "wednesday" — откуда задача родом (для offload)
-//     targetDateKey   // куда сохранять изменения
-//   } | null
-// }
-//
-// Вёрстка даёт классы и дата-атрибуты, на которые потом вешается events.js.
-
 function esc(str){
   return String(str ?? "")
     .replace(/&/g,"&amp;")
@@ -42,7 +17,7 @@ function renderTaskRowView(task, opts){
 
   const editingThis = isEditing && (editingTaskId === task.id);
 
-  // режим редактирования (только для обычной задачи, не для offload)
+  // режим редактирования (только для обычной задачи)
   if (editingThis && source === "core") {
     return `
       <div class="task-item editing"
@@ -80,10 +55,7 @@ function renderTaskRowView(task, opts){
          data-main-weekday="${esc(mainWeekday||"")}">
 
       <label class="task-checkline">
-        <input
-          class="task-done"
-          type="checkbox"
-          ${pct>=100 ? "checked" : ""}>
+        <input class="task-done" type="checkbox" ${pct>=100 ? "checked" : ""}>
         <span class="task-title">${esc(task.title)}</span>
       </label>
 
@@ -100,15 +72,14 @@ function renderTaskRowView(task, opts){
   `;
 }
 
-// Блок с задачами (обычные или разгрузка)
-function renderTaskSection(label, list, dashboardEdit){
+// Блок с задачами
+function renderTaskSection(label, list, dashboardEdit, forceSource){
   const arr = Array.isArray(list) ? list : [];
-
   const isEditing = !!dashboardEdit;
   const editingTaskId = dashboardEdit?.taskId || "";
 
   const rows = arr.map(t => {
-    const src = t.source || (t.offload ? "offload" : "core");
+    const src = forceSource || t.source || "core";
     const weekday = t.mainWeekday || dashboardEdit?.mainWeekday || "";
     return renderTaskRowView(t, {
       source: src,
@@ -128,7 +99,7 @@ function renderTaskSection(label, list, dashboardEdit){
   `;
 }
 
-// Статистика дня
+// Статистика
 function renderStats(stats){
   if(!stats || typeof stats !== "object") return "";
   const totalMin = stats.totalMinutes ?? 0;
@@ -155,7 +126,7 @@ function renderStats(stats){
   `;
 }
 
-// Главная функция отрисовки дашборда
+// Главная функция
 export function updateDashboardView(model){
   const {
     dateKey,
@@ -182,12 +153,11 @@ export function updateDashboardView(model){
   `;
 
   const htmlStats = renderStats(stats);
-  const htmlTasksMain = renderTaskSection("На завтра", tasks, dashboardEdit);
-  const htmlTasksOff  = renderTaskSection("Разгрузка (сделай заранее)", offloadTasks, dashboardEdit);
+  // ✅ Явно указываем тип блока: core / offload
+  const htmlTasksMain = renderTaskSection("На завтра", tasks, dashboardEdit, "core");
+  const htmlTasksOff  = renderTaskSection("Разгрузка (сделай заранее)", offloadTasks, dashboardEdit, "offload");
 
   rootSection.innerHTML = htmlHeader + htmlStats + htmlTasksMain + htmlTasksOff;
 }
 
-export default {
-  updateDashboardView
-};
+export default { updateDashboardView };

@@ -1,16 +1,4 @@
-// js/usecases/ensureTaskInOverrideForDate.js
-//
-// Задача: убедиться, что в снимке дня (override) для dateKey
-// есть задача с нужным taskId.
-//
-// Если override ещё не существует — мы создаём его из расписания
-// (логика "домашки на завтра": берём следующий день и его расписание).
-//
-// Возвращает { ov, task }:
-//   ov   — весь override { dateKey, tasks[], meta }
-//   task — конкретная задача внутри ov.tasks
-
-import { loadDayOverride, saveDayOverride, loadSchedule } from "../data/repo.js";
+import { loadDayOverride, loadSchedule } from "../data/repo.js";
 
 // Добавить N дней к "YYYY-MM-DD"
 function addDaysToDateKey(dateKey, days){
@@ -32,8 +20,7 @@ function weekdayKeyFromDateKey(dateKey){
   return map[d.getDay()] || "monday";
 }
 
-// Клонируем задачу из расписания для override:
-// прогресс = 0%, offloadDays = null
+// Клонируем задачу из расписания для override
 function cloneFromScheduleTask(srcTask, fallbackId){
   return {
     id: String(srcTask?.id || fallbackId || ""),
@@ -49,7 +36,6 @@ function cloneFromScheduleTask(srcTask, fallbackId){
 }
 
 // Создать новый override для dateKey, если его нет.
-// Мы берём "завтрашний" день и используем расписание того дня недели.
 async function buildFreshOverrideFromSchedule(dateKey){
   const schedule = await loadSchedule();
 
@@ -65,15 +51,12 @@ async function buildFreshOverrideFromSchedule(dateKey){
   return {
     dateKey,
     tasks: clonedTasks,
-    meta: null // saveDayOverride потом добавит meta
+    meta: null
   };
 }
 
 export default async function ensureTaskInOverrideForDate({ dateKey, taskId }){
-  // 1. Загружаем override для этой даты (снимок дня)
   let ov = await loadDayOverride(dateKey);
-
-  // 2. Если нет — создаём с нуля
   if(!ov){
     ov = await buildFreshOverrideFromSchedule(dateKey);
   }
@@ -82,16 +65,13 @@ export default async function ensureTaskInOverrideForDate({ dateKey, taskId }){
     ov.tasks = [];
   }
 
-  // 3. Ищем задачу по id
   let task = ov.tasks.find(
     t => String(t.id||"") === String(taskId||"")
   );
 
-  // 4. Если задачи нет — ищем её в расписании недели по id
   if(!task){
     const schedule = await loadSchedule();
     let found = null;
-
     for(const weekdayKey of Object.keys(schedule||{})){
       const dayArr = Array.isArray(schedule[weekdayKey]) ? schedule[weekdayKey] : [];
       for(const cand of dayArr){
@@ -102,14 +82,11 @@ export default async function ensureTaskInOverrideForDate({ dateKey, taskId }){
       }
       if(found) break;
     }
-
     const newTask = cloneFromScheduleTask(found, taskId);
     ov.tasks.push(newTask);
     task = newTask;
   }
 
-  // 5. Сохраняем override обратно (важно!)
-  await saveDayOverride(ov, "ensureTaskInOverrideForDate");
-
+  // Больше не сохраняем ov здесь — пусть сохраняет тот, кто реально меняет задачу
   return { ov, task };
 }
