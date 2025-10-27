@@ -1,33 +1,24 @@
-/**
- * js/app.js
- * Главная точка входа в приложение "Лёшин планировщик".
- *
- * Порядок запуска:
- * 1. Настроить хранилище (Storage) — определить, доступен ли Telegram.CloudStorage или работать локально.
- * 2. После инициализации Storage запустить пользовательский интерфейс (UI).
- *
- * Всё приложение работает ТОЛЬКО через Storage:
- * repo.js -> Storage.*() -> либо Telegram CloudStorage, либо localStorage браузера.
- */
-
 import { Storage } from "./infra/telegramEnv.js";
-import { initUI } from "./ui/events.js";
+import initUI from "./ui/events.js"; // теперь default import
+
+// Возможные вспомогательные штуки проекта:
+// - repo.buildDashboardViewModel вызывается уже внутри events -> refreshDashboard()
+// - view-компоненты теперь вызываются из events.js
+// - т.е. app.js сейчас делает только стартовую инициализацию среды
 
 async function main() {
-  // === 1. Инициализация хранилища ===
-  // Storage.init() проверит доступность CloudStorage Телеграма.
-  // Если недоступен — автоматически переключится на localStorage.
+  // 1. Инициализируем Storage (локальное или Telegram CloudStorage)
   await Storage.init();
   console.log("[app] Storage mode =", Storage.getMode && Storage.getMode());
 
-  // === 2. Запуск пользовательского интерфейса ===
-  // initUI:
-  // - создаёт объект состояния приложения (state)
-  // - навешивает обработчики событий
-  // - выполняет первый рендер дашборда, календаря и расписания
-  await initUI();
+  // 2. Инициализируем UI (вешаем обработчики, показываем стартовую вкладку)
+  initUI();
+
+  // 3. (опционально) можно сюда добавить любые future hooks
+  //    например телеграмм-специфичные штуки типа tg.WebApp.expand()
+  //    но сейчас это уже делается внутри telegramEnv.js/init()
 }
 
-// Запускаем приложение.
-// Важно: top-level await разрешён, потому что index.html подключает этот файл через <script type="module">
-await main();
+main().catch(err => {
+  console.error("[app] fatal init error", err);
+});

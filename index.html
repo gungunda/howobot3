@@ -31,7 +31,7 @@
           <div class="schedule-title" data-day-label>Домашняя работа</div>
           <div class="schedule-actions">
             <button data-action="open-schedule-editor" type="button">Редактировать расписание</button>
-            <button data-action="reset-day" type="button">Сбросить день</button>
+            <button class="dash-reset-day" data-action="reset-day" type="button">Сбросить день</button>
           </div>
         </div>
 
@@ -55,7 +55,7 @@
           </div>
         </div>
 
-        <!-- Основные задачи дня (то, что пришло из D+1 или из override дня) -->
+        <!-- Основные задачи дня -->
         <div class="task-list" data-tasks></div>
         <div class="muted" data-empty style="display:none">Нет задач</div>
 
@@ -68,14 +68,13 @@
     </section>
 
     <!-- === НЕДЕЛЯ / РАСПИСАНИЕ === -->
-    <section class="view" data-view="schedule" hidden>
+    <section class="view" data-view="schedule">
       <div class="section card">
         <div class="section-head section-head-inline">
           <h2 class="section-title">Расписание недели</h2>
-          <button data-action="back-to-dashboard" type="button">Назад к дню</button>
+          <button class="back-btn" data-action="back-to-dashboard" type="button">Назад к дню</button>
         </div>
 
-        <!-- карточки Пн..Вс -->
         <div class="week-grid" data-week></div>
 
         <p class="muted small hint-text">
@@ -86,7 +85,7 @@
     </section>
 
     <!-- === КАЛЕНДАРЬ === -->
-    <section class="view" data-view="calendar" hidden>
+    <section class="view" data-view="calendar">
       <div class="section card">
         <div class="section-head section-head-inline">
           <div class="cal-head-left">
@@ -95,11 +94,10 @@
             <button class="cal-nav" data-cal-next type="button">→</button>
           </div>
 
-          <button data-action="back-to-dashboard-2" type="button">Назад к дню</button>
+          <button class="back-btn" data-action="back-to-dashboard-2" type="button">Назад к дню</button>
         </div>
 
         <div class="calendar-wrapper">
-          <!-- сетка 7x6 (пн-вс) + заголовки дней недели -->
           <div class="calendar-grid" data-cal-grid></div>
         </div>
 

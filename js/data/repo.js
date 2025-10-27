@@ -1,10 +1,3 @@
-// js/data/repo.js
-// Единый репозиторий данных (расписание недели + снимки дней).
-// Всё приложение (usecases, UI) общается с данными только через этот слой.
-//
-// Storage — это прослойка над localStorage или Telegram WebApp CloudStorage.
-// (см. infra/telegramEnv.js)
-
 import { Storage } from "../infra/telegramEnv.js";
 import { DeviceId } from "../domain/id.js";
 
@@ -77,10 +70,8 @@ function stampSchedule(scheduleObj, actionHint) {
 // ------- ключи хранения -------
 const KEY_SCHEDULE = "planner.schedule.v1";
 function dayStorageKey(dateKey) {
-  // пример: planner.override.2025-10-26.v1
   return `planner.override.${dateKey}.v1`;
 }
-
 
 // -------------------- PUBLIC API: расписание недели --------------------
 
@@ -123,18 +114,7 @@ export async function saveSchedule(scheduleObj, actionHint) {
   return true;
 }
 
-
 // -------------------- PUBLIC API: снимок дня (override) --------------------
-//
-// Формат:
-// {
-//   dateKey: "2025-10-26",
-//   tasks: [
-//     { id, title, minutes, donePercent, done, offloadDays:null, meta:{} },
-//     ...
-//   ],
-//   meta: { createdAt, updatedAt, deviceId, userAction }
-// }
 
 export async function loadDayOverride(dateKey) {
   const k = dayStorageKey(dateKey);
@@ -190,28 +170,49 @@ export async function saveDayOverride(dayObj, actionHint) {
   return true;
 }
 
-// Возвращает массив дат ["2025-10-26", "2025-10-27", ...],
-// у которых есть сохранённый override.
+// Возвращает массив дат ["2025-10-26", ...], у которых есть сохранённый override.
 export async function listOverrideDates() {
   const keys = await Storage.getKeys();
   const out = [];
 
   for (const k of keys) {
-    // Ищем ключи вида planner.override.2025-10-26.v1
     const m = /^planner\.override\.(\d{4}-\d{2}-\d{2})\.v1$/.exec(k);
-    if (m) {
-      out.push(m[1]);
-    }
+    if (m) out.push(m[1]);
   }
 
   console.log("[repo.listOverrideDates] keys =", keys, "dates =", out);
   return out;
 }
 
+// -------------------- UI INLINE EDIT STATE (дашборд) --------------------
+// Эти функции не взаимодействуют со Storage, а просто держат состояние в памяти.
+
+const _inlineEditState = {}; // { dateKey: { taskId } }
+
+export function startInlineEditTaskForDate(dateKey, taskId) {
+  if (!dateKey) return;
+  _inlineEditState[dateKey] = { taskId };
+  console.log("[repo.inlineEdit] start", dateKey, "=>", taskId);
+}
+
+export function finishInlineEditTaskForDate(dateKey) {
+  if (!dateKey) return;
+  if (_inlineEditState[dateKey]) delete _inlineEditState[dateKey];
+  console.log("[repo.inlineEdit] finish", dateKey);
+}
+
+export function getInlineEditStateForDate(dateKey) {
+  return _inlineEditState[dateKey] || null;
+}
+
+// -------------------- EXPORT DEFAULT --------------------
 export default {
   loadSchedule,
   saveSchedule,
   loadDayOverride,
   saveDayOverride,
-  listOverrideDates
+  listOverrideDates,
+  startInlineEditTaskForDate,
+  finishInlineEditTaskForDate,
+  getInlineEditStateForDate,
 };
