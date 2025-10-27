@@ -1,29 +1,44 @@
 import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
 import { saveDayOverride } from "../data/repo.js";
 
-export default async function toggleTaskDoneForDate({
-  dateKey,
-  taskId
-}){
-  console.log("[usecase.toggleTaskDoneForDate] called", { dateKey, taskId });
+/**
+ * toggleTaskDoneForDate
+ *
+ * Меняет состояние чекбокса "сделано" у конкретной задачи в конкретную дату.
+ *
+ * Логика:
+ * - если задача <100% → ставим 100% и done=true
+ * - если задача уже 100% → сбрасываем в 0% и done=false
+ *
+ * Это работает ТОЛЬКО на override дня:
+ * мы не трогаем недельное расписание.
+ */
+export default async function toggleTaskDoneForDate({ dateKey, taskId }) {
+  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
 
-  const { ov, task } = await ensureTaskInOverrideForDate({ dateKey, taskId });
+  const wasDone = task.donePercent >= 100;
+  const newPct = wasDone ? 0 : 100;
 
-  let cur = Number(task.donePercent);
-  if (!Number.isFinite(cur)) cur = 0;
+  task.donePercent = newPct;
+  task.done = newPct >= 100;
 
-  const wasDone = cur >= 100;
-  const newPercent = wasDone ? 0 : 100;
-
-  task.donePercent = newPercent;
-  task.done = newPercent >= 100;
-
-  console.log("[usecase.toggleTaskDoneForDate] new task state", {
-    taskId: task.id,
-    donePercent: task.donePercent,
-    done: task.done
+  ov.tasks = ov.tasks.map(t => {
+    if (String(t.id) === String(taskId)) {
+      return {
+        ...t,
+        donePercent: task.donePercent,
+        done: task.done
+      };
+    }
+    return t;
   });
 
-  await saveDayOverride(ov, "toggleDone");
-  return ov.tasks;
+  ov.meta = {
+    ...ov.meta,
+    updatedAt: new Date().toISOString(),
+    userAction: "toggleTaskDoneForDate"
+  };
+
+  await saveDayOverride(ov, "toggleTaskDoneForDate");
+  return { taskId, donePercent: task.donePercent, done: task.done };
 }

@@ -1,4 +1,17 @@
-"use strict";
-
-/** Заглушка: в будущем здесь будет синхронизация Local ↔ Cloud по LWW. */
-export async function syncNow() { /* TODO */ }
+/**
+ * syncNow
+ *
+ * Заглушка под будущую синхронизацию в облако Telegram.
+ *
+ * Сейчас Storage уже умеет писать либо в localStorage,
+ * либо в Telegram.WebApp.CloudStorage (когда доступно).
+ *
+ * В будущем тут можно будет сделать:
+ *  - собрать изменения локально,
+ *  - отправить в облако,
+ *  - обработать конфликты.
+ */
+export default async function syncNow() {
+  // TODO: реализовать реальную синхронизацию между устройствами
+  return;
+}

@@ -1,27 +1,47 @@
-// js/usecases/editTaskInline.js
-// Инлайн-правка задачи (название и длительность) для конкретной даты.
-// Это НЕ правка расписания всей недели, только снимка дня (override).
-
 import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
 import { saveDayOverride } from "../data/repo.js";
 
-export default async function editTaskInline({ dateKey, taskId, patch }){
-  if (!dateKey || !taskId) return;
+/**
+ * editTaskInline
+ *
+ * Меняем заголовок и минуты задачи на КОНКРЕТНЫЙ ДЕНЬ,
+ * когда пользователь нажал ✎ на дашборде и отредактировал поля.
+ *
+ * Это НЕ меняет расписание недели! Только конкретный снимок (override) даты.
+ *
+ * Аргументы:
+ *  - dateKey: "2025-10-27"
+ *  - taskId: "math1"
+ *  - patch: { title?:string, minutes?:number }
+ */
+export async function editTaskInline({ dateKey, taskId, patch }) {
+  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
 
-  const { ov, task } = await ensureTaskInOverrideForDate({ dateKey, taskId });
-
-  if (patch) {
-    if (typeof patch.title === "string") {
-      task.title = patch.title;
-    }
-    if (
-      typeof patch.minutes === "number" &&
-      !Number.isNaN(patch.minutes) &&
-      patch.minutes >= 0
-    ) {
-      task.minutes = patch.minutes;
-    }
+  // обновляем task локально
+  if (patch.title !== undefined) {
+    task.title = String(patch.title || "").trim() || "Без названия";
   }
 
+  if (patch.minutes !== undefined) {
+    let mins = Number(patch.minutes) || 0;
+    if (mins < 0) mins = 0;
+    task.minutes = mins;
+  }
+
+  // применяем на список
+  ov.tasks = ov.tasks.map(t => {
+    if (String(t.id) === String(taskId)) {
+      return {
+        ...t,
+        title: task.title,
+        minutes: task.minutes
+      };
+    }
+    return t;
+  });
+
   await saveDayOverride(ov, "editTaskInline");
+  return { taskId, title: task.title, minutes: task.minutes };
 }
+
+export default editTaskInline;

@@ -1,597 +1,634 @@
 ===FILE_START===
-PATH: styles.css
+PATH: js/usecases/addTaskToSchedule.js
 -----8<-----
-/* assets/styles.css
-   Базовые стили для MVP.
-   Акцент: читаемость кода для junior-разработчика.
-*/
-
-body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background:#f5f5f5;
-  color:#222;
-  margin:0;
-  padding:0;
-}
-
-.app {
-  max-width:1200px;
-  margin:0 auto;
-  padding:12px;
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-
-/* Общая карточка (белый бокс с тенью) */
-.card {
-  background:#fff;
-  border-radius:8px;
-  box-shadow:0 2px 4px rgba(0,0,0,0.07);
-  padding:12px 16px;
-}
-
-.section {
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-
-.topbar {
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:space-between;
-  align-items:flex-start;
-  gap:12px;
-}
-
-.topbar-nav {
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-}
-
-.topbar-nav button {
-  cursor:pointer;
-}
-
-.topbar-date {
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  align-items:center;
-}
-
-.main {
-  display:flex;
-  flex-direction:column;
-  gap:12px;
-}
-
-.footer {
-  text-align:center;
-  padding:12px;
-  color:#666;
-}
-
-/* Утилиты текста */
-.small {
-  font-size:0.8rem;
-}
-
-.muted {
-  color:#666;
-}
-
-.hint-text {
-  margin-top:12px;
-  line-height:1.4;
-  color:#666;
-}
-
-/* inline-заголовки секций */
-.section-head-inline {
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:space-between;
-  align-items:flex-start;
-  gap:8px;
-}
-
-.section-title {
-  margin:0;
-  font-size:1rem;
-  font-weight:600;
-}
-
-/* ============================
-   DASHBOARD (экран дня: dашборд)
-   ============================ */
-
-.dashboard .schedule-header {
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:space-between;
-  gap:8px;
-  align-items:flex-start;
-}
-
-.schedule-title {
-  font-size:1rem;
-  font-weight:600;
-}
-
-.schedule-actions button {
-  cursor:pointer;
-  margin-left:4px;
-}
-
-.stats-row {
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
-  gap:8px;
-}
-
-.stat-box {
-  text-align:center;
-}
-
-.stat-value {
-  font-size:1rem;
-  font-weight:600;
-}
-
-/* Список задач на день + оффлоад */
-.task-list {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-/* Карточка задачи (используется и в дашборде, и в расписании) */
-.task-item {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  background:#fafafa;
-  border:1px solid #ddd;
-  border-radius:6px;
-  padding:8px 10px;
-}
-
-/* Основная строка с названием предмета и минутами */
-.task-mainline {
-  display:flex;
-  flex-wrap:wrap;
-  justify-content:space-between;
-  align-items:flex-start;
-  gap:6px;
-}
-
-.task-title {
-  font-weight:500;
-  line-height:1.3;
-}
-
-.task-mins {
-  font-size:0.8rem;
-  color:#444;
-  background:#eee;
-  border-radius:4px;
-  padding:2px 6px;
-  line-height:1.2;
-}
-
-/* Доп. инфо под задачей (offload-дни и т.д.) */
-.task-meta {
-  font-size:0.75rem;
-  color:#666;
-  line-height:1.3;
-}
-
-/* Блок действий справа от задачи (редактировать / удалить) */
-.task-actions {
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  font-size:0.8rem;
-}
-
-.task-actions button {
-  cursor:pointer;
-  font-size:0.8rem;
-  line-height:1.2;
-  background:#fff;
-  border:1px solid #aaa;
-  border-radius:4px;
-  padding:4px 6px;
-}
-
-/* Прогресс задачи на дашборде (кнопки -10 / +10 и % прогресса) */
-.task-progress {
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-  align-items:center;
-  font-size:0.8rem;
-}
-
-.task-pct-minus,
-.task-pct-plus {
-  cursor:pointer;
-  background:#fff;
-  border:1px solid #aaa;
-  border-radius:4px;
-  padding:2px 6px;
-  line-height:1.2;
-  font-size:0.8rem;
-}
-
-/* Чекбокс "сделано" */
-.task-done {
-  margin-right:6px;
-}
-
-/* OFFLOAD (разгрузка блок на дашборде) */
-.offload-section {
-  border-top:1px solid #ddd;
-  padding-top:12px;
-}
-
-.offload-title {
-  font-weight:600;
-  color:#444;
-}
-
-/* ============================
-   WEEK / SCHEDULE (расписание недели)
-   Это соответствует js/ui/view-schedule.js
-   ============================ */
-
-/* Шапка экрана расписания */
-.week-header {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  margin-bottom:12px;
-}
-
-.week-header h1 {
-  margin:0;
-  font-size:1rem;
-  font-weight:600;
-  line-height:1.3;
-}
-
-.week-header .back-btn {
-  align-self:flex-start;
-  cursor:pointer;
-  background:#fff;
-  border:1px solid #aaa;
-  border-radius:4px;
-  padding:4px 8px;
-  font-size:0.8rem;
-  line-height:1.2;
-}
-
-/* Сетка из дней недели */
-.week-columns {
-  display:flex;
-  flex-wrap:wrap;
-  gap:12px;
-}
-
-/* Карточка дня недели */
-.week-day {
-  flex:1 1 220px;
-  min-width:220px;
-  background:#fff;
-  border-radius:8px;
-  box-shadow:0 2px 4px rgba(0,0,0,0.07);
-  padding:12px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-.week-day-title {
-  font-weight:600;
-  font-size:0.9rem;
-  line-height:1.3;
-  display:flex;
-  justify-content:space-between;
-  align-items:flex-start;
-  gap:8px;
-}
-
-/* Контейнер для списка задач дня в расписании */
-.week-day-tasks {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-/* Кнопка "Добавить задачу" внизу дня */
-.week-add-wrap {
-  margin-top:4px;
-}
-
-.week-add {
-  cursor:pointer;
-  background:#fff;
-  border:1px solid #aaa;
-  border-radius:4px;
-  padding:4px 8px;
-  line-height:1.2;
-  font-size:0.8rem;
-}
-
-/* Карточка задачи в режиме редактирования */
-.task-item.editing {
-  background:#f0f7ff;
-  border:1px solid #99c2ff;
-}
-
-/* Внутренний блок редактирования задачи */
-.task-edit-fields {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-/* Одна "строка" ввода в редакторе */
-.task-edit-field {
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  font-size:0.8rem;
-}
-
-.task-edit-label {
-  font-size:0.75rem;
-  color:#444;
-  line-height:1.2;
-}
-
-/* Поля ввода названия и минут */
-.week-edit-title,
-.week-edit-minutes {
-  width:100%;
-  box-sizing:border-box;
-  padding:6px 8px;
-  border-radius:4px;
-  border:1px solid #bbb;
-  font-size:0.9rem;
-}
-
-/* Блок выбора "дней разгрузки" */
-.week-offload-group {
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-}
-
-.week-offload-label {
-  font-size:0.75rem;
-  line-height:1.2;
-}
-
-.week-offload-list {
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-}
-
-.week-offload-item {
-  display:flex;
-  align-items:center;
-  gap:4px;
-  background:#fff;
-  border:1px solid #bbb;
-  border-radius:4px;
-  padding:2px 6px;
-  font-size:0.8rem;
-  line-height:1.2;
-}
-
-.week-offload-item.muted {
-  opacity:0.5;
-}
-
-/* Кнопки "Сохранить / Отмена" в редакторе задачи */
-.week-edit-actions {
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  margin-top:8px;
-}
-
-.week-save,
-.week-cancel,
-.week-edit,
-.week-del {
-  cursor:pointer;
-  font-size:0.8rem;
-  background:#fff;
-  border:1px solid #aaa;
-  border-radius:4px;
-  padding:4px 8px;
-  line-height:1.2;
-}
-
-/* ============================
-   CALENDAR (месячный календарь)
-   Это соответствует view-calendar.js
-   ============================ */
-
-.cal-head-left {
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-  align-items:center;
-}
-
-.cal-nav {
-  cursor:pointer;
-  background:#fff;
-  border:1px solid #aaa;
-  border-radius:4px;
-  padding:4px 8px;
-  line-height:1.2;
-  font-size:0.8rem;
-}
-
-.calendar-wrapper {
-  margin-top:12px;
-}
-
-.calendar-grid {
-  display:grid;
-  grid-template-columns:repeat(7,1fr);
-  grid-auto-rows:minmax(44px,auto);
-  gap:4px;
-  text-align:center;
-  font-size:0.8rem;
-}
-
-/* Обычная клетка дня */
-.calendar-cell,
-.cal-day {
-  background:#fafafa;
-  border:1px solid #ddd;
-  border-radius:4px;
-  padding:6px;
-  line-height:1.3;
-  user-select:none;
-}
-
-/* Шапка с названиями дней недели (Пн Вт Ср ...) */
-.cal-header {
-  background:#eef;
-  font-weight:600;
-  border:1px solid #99c2ff;
-}
-
-/* Клетка дня, кликабельная */
-.cal-day {
-  cursor:pointer;
-  background:#fff;
-}
-
-/* Дни не из текущего месяца (серые) */
-.cal-day.outside {
-  opacity:0.4;
-}
-
-/* Сегодня */
-.cal-day.today {
-  border:2px solid #4caf50;
-}
-
-/* Выбранный день */
-.cal-day.selected {
-  background:#eef;
-  border:2px solid #88f;
-}
-
-/* День, в котором есть override (данные уже кастомизированы) */
-.cal-day.has-override {
-  box-shadow:0 0 0 2px #ffa726 inset;
-  /* мягкий оранжевый акцент, чтобы "есть изменения" было заметно,
-     но не билось с today/selected */
-}
-
-/* ============================
-   LEGACY / МУСОР (устаревшие классы)
-   Эти стили остались от старых версий render-schedule/view-week.
-   Они сейчас не используются напрямую в новой вёрстке,
-   но мы оставляем их временно, чтобы ничего не развалилось.
-   После стабилизации UI их можно будет удалить.
-   ============================ */
-
-/* Старые сетки недельного расписания */
-.week-grid {
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-  gap:12px;
-}
-
-.week-day-header {
-  display:flex;
-  justify-content:space-between;
-  align-items:flex-start;
-  gap:8px;
-  font-weight:600;
-  font-size:0.9rem;
-}
-
-.week-day-list {
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-
-/* Старый вид строки задачи внутри дня расписания */
-.week-row {
-  display:flex;
-  justify-content:space-between;
-  align-items:flex-start;
-  gap:8px;
-  flex-wrap:wrap;
-}
-
-.week-row-right {
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-  align-items:center;
-}
-
-/* Старый редактор задачи */
-.week-edit-form {
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  background:#f0f7ff;
-  border:1px solid #99c2ff;
-  border-radius:6px;
-  padding:8px;
-}
-
-/* Старые чекбоксы дней разгрузки */
-.week-offload-grid {
-  display:flex;
-  flex-wrap:wrap;
-  gap:6px;
-}
-
-.offload-choice {
-  display:flex;
-  align-items:center;
-  gap:4px;
-  background:#fff;
-  border:1px solid #bbb;
-  border-radius:4px;
-  padding:2px 6px;
-  font-size:0.8rem;
-}
-
-/* ============================
-   Глобальные кнопки
-   ============================ */
-
-button {
-  background:#fff;
-  border:1px solid #aaa;
-  border-radius:4px;
-  padding:4px 8px;
-  font-size:0.8rem;
-  line-height:1.2;
-  cursor:pointer;
-}
-
-button:hover {
-  background:#f0f0f0;
+import { loadSchedule, saveSchedule } from "../data/repo.js";
+
+/**
+ * addTaskToSchedule
+ * Добавляет новую задачу в расписание недели (шаблон).
+ *
+ * Пояснение:
+ * Расписание недели — это не конкретный день календаря,
+ * а "модель по дням недели". Например:
+ *   monday: [ { id, title, minutes, offloadDays[] }, ... ]
+ *
+ * Когда ученик потом открывает дашборд,
+ * мы на его выбранный dateKey берём задачи "на завтра"
+ * из расписания и создаём override.
+ *
+ * Здесь мы просто дописываем новую задачу в конкретный weekdayKey.
+ */
+export async function addTaskToSchedule({ weekdayKey, task }) {
+  const sched = await loadSchedule();
+
+  // убедимся, что там есть массив
+  if (!Array.isArray(sched[weekdayKey])) {
+    sched[weekdayKey] = [];
+  }
+
+  // генерим id (простая версия: timestamp + random)
+  const newTask = {
+    id: "task_" + Date.now().toString(36) + "_" + Math.floor(Math.random()*1e6),
+    title: task.title || "Без названия",
+    minutes: Number(task.minutes) || 0,
+    offloadDays: Array.isArray(task.offloadDays) ? [...task.offloadDays] : [],
+    donePercent: 0,
+    done: false,
+    meta: task.meta || null
+  };
+
+  sched[weekdayKey].push(newTask);
+
+  await saveSchedule(sched, "addTaskToSchedule");
+  return newTask;
+}
+
+export default addTaskToSchedule;
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/adjustTaskPercentForDate.js
+-----8<-----
+import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
+import { saveDayOverride } from "../data/repo.js";
+
+/**
+ * adjustTaskPercentForDate
+ *
+ * Изменяет прогресс задачи (donePercent) на ±10%.
+ * Это вызывается когда пользователь жмёт кнопки "-10%" или "+10%" в дашборде.
+ *
+ * ВАЖНО:
+ * - Мы не трогаем глобальное расписание недели.
+ * - Мы работаем только с override для конкретной даты.
+ * - Если override не существовал, он создаётся (только сейчас,
+ *   то есть при реальном редактировании, что нам и нужно).
+ */
+export async function adjustTaskPercentForDate({ dateKey, taskId, delta }) {
+  // убеждаемся, что в override дня есть эта задача
+  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
+
+  // скорректировать donePercent
+  const newPctRaw = Number(task.donePercent || 0) + Number(delta || 0);
+  let newPct = Math.round(newPctRaw);
+  if (newPct < 0) newPct = 0;
+  if (newPct > 100) newPct = 100;
+
+  task.donePercent = newPct;
+  task.done = newPct >= 100;
+
+  // пересобрать список задач (заменяем задачу с тем же id)
+  ov.tasks = ov.tasks.map(t => {
+    if (String(t.id) === String(taskId)) {
+      return { ...t, donePercent: task.donePercent, done: task.done };
+    }
+    return t;
+  });
+
+  await saveDayOverride(ov, "adjustTaskPercentForDate");
+  return { taskId, donePercent: task.donePercent };
+}
+
+export default adjustTaskPercentForDate;
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/deleteTaskFromSchedule.js
+-----8<-----
+import { loadSchedule, saveSchedule } from "../data/repo.js";
+
+/**
+ * deleteTaskFromSchedule
+ *
+ * Удаляет задачу из недельного расписания (шаблона),
+ * то есть из секции "Расписание недели".
+ *
+ * Она НЕ трогает уже созданные override-дни в прошлом.
+ */
+export async function deleteTaskFromSchedule({ weekdayKey, taskId }) {
+  const sched = await loadSchedule();
+
+  const arr = Array.isArray(sched[weekdayKey]) ? sched[weekdayKey] : [];
+  const filtered = arr.filter(t => String(t.id) !== String(taskId));
+
+  sched[weekdayKey] = filtered;
+  await saveSchedule(sched, "deleteTaskFromSchedule");
+
+  return true;
+}
+
+export default deleteTaskFromSchedule;
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/editTaskInline.js
+-----8<-----
+import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
+import { saveDayOverride } from "../data/repo.js";
+
+/**
+ * editTaskInline
+ *
+ * Меняем заголовок и минуты задачи на КОНКРЕТНЫЙ ДЕНЬ,
+ * когда пользователь нажал ✎ на дашборде и отредактировал поля.
+ *
+ * Это НЕ меняет расписание недели! Только конкретный снимок (override) даты.
+ *
+ * Аргументы:
+ *  - dateKey: "2025-10-27"
+ *  - taskId: "math1"
+ *  - patch: { title?:string, minutes?:number }
+ */
+export async function editTaskInline({ dateKey, taskId, patch }) {
+  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
+
+  // обновляем task локально
+  if (patch.title !== undefined) {
+    task.title = String(patch.title || "").trim() || "Без названия";
+  }
+
+  if (patch.minutes !== undefined) {
+    let mins = Number(patch.minutes) || 0;
+    if (mins < 0) mins = 0;
+    task.minutes = mins;
+  }
+
+  // применяем на список
+  ov.tasks = ov.tasks.map(t => {
+    if (String(t.id) === String(taskId)) {
+      return {
+        ...t,
+        title: task.title,
+        minutes: task.minutes
+      };
+    }
+    return t;
+  });
+
+  await saveDayOverride(ov, "editTaskInline");
+  return { taskId, title: task.title, minutes: task.minutes };
+}
+
+export default editTaskInline;
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/editTaskInSchedule.js
+-----8<-----
+import { loadSchedule, saveSchedule } from "../data/repo.js";
+
+/**
+ * editTaskInSchedule
+ *
+ * Меняем задачу в недельном расписании (экран "Расписание недели").
+ * Это влияет на будущее, но не переписывает прошедшие override-дни.
+ *
+ * Аргументы:
+ *  - weekday: "monday"
+ *  - taskId: "math1"
+ *  - patch: {
+ *      title?: string,
+ *      minutes?: number,
+ *      offloadDays?: string[]
+ *    }
+ */
+export async function editTaskInSchedule({ weekday, taskId, patch }) {
+  const sched = await loadSchedule();
+
+  let dayArr = Array.isArray(sched[weekday]) ? sched[weekday] : [];
+  dayArr = dayArr.map(task => {
+    if (String(task.id) !== String(taskId)) return task;
+
+    const updated = { ...task };
+
+    if (patch.title !== undefined) {
+      updated.title = String(patch.title || "").trim() || "Без названия";
+    }
+
+    if (patch.minutes !== undefined) {
+      let mins = Number(patch.minutes) || 0;
+      if (mins < 0) mins = 0;
+      updated.minutes = mins;
+    }
+
+    if (patch.offloadDays !== undefined) {
+      updated.offloadDays = Array.isArray(patch.offloadDays)
+        ? [...patch.offloadDays]
+        : [];
+    }
+
+    return updated;
+  });
+
+  sched[weekday] = dayArr;
+  await saveSchedule(sched, "editTaskInSchedule");
+  return true;
+}
+
+export default editTaskInSchedule;
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/ensureTaskInOverrideForDate.js
+-----8<-----
+import {
+  loadDayOverride,
+  saveDayOverride,
+  loadSchedule
+} from "../data/repo.js";
+
+/**
+ * ensureTaskInOverrideForDate
+ *
+ * Цель:
+ *  - Гарантировать, что override (снимок задач) для конкретной даты существует в памяти (ov)
+ *  - Гарантировать, что в этом override есть задача с нужным taskId
+ *
+ * Очень важно понять:
+ *  - Эта функция не просто "читает". Она готовит override к редактированию.
+ *  - Она МОЖЕТ создать новый override в памяти (ov),
+ *    но она НЕ сохраняет его сразу в хранилище.
+ *    Сохранение делает вызывающий usecase после фактического изменения.
+ *
+ * Поведение:
+ *  1. Если override уже есть → ок.
+ *  2. Если override нет → создаём новый объект ov на основе расписания
+ *     (берём задачи "на завтра" как основу), со сброшенными donePercent=0.
+ *  3. Если в ov нет задачи с таким taskId →
+ *     - ищем её в расписании недели
+ *     - копируем и добавляем
+ *  4. Возвращаем { ov, task } (task — это ссылка на задачу внутри ov),
+ *     чтобы вызывающий код мог менять её и потом вызвать saveDayOverride().
+ *
+ * Это вызывается, например, в:
+ *  - adjustTaskPercentForDate
+ *  - toggleTaskDoneForDate
+ *  - editTaskInline
+ */
+export default async function ensureTaskInOverrideForDate(dateKey, taskId) {
+  // Загружаем override этой даты, если есть.
+  let ov = await loadDayOverride(dateKey);
+
+  // Функция-помощник: получаем weekday строки вида "YYYY-MM-DD"
+  function weekdayKeyFromDateKey(dk) {
+    const [y, m, d] = String(dk).split("-");
+    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+    const map = [
+      "sunday",    // 0
+      "monday",    // 1
+      "tuesday",   // 2
+      "wednesday", // 3
+      "thursday",  // 4
+      "friday",    // 5
+      "saturday"   // 6
+    ];
+    return map[dateObj.getDay()] || "monday";
+  }
+
+  function addDaysToDateKey(dk, n) {
+    const [y, m, d] = String(dk).split("-");
+    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+    dateObj.setDate(dateObj.getDate() + Number(n || 0));
+    const yy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const dd = String(dateObj.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+  }
+
+  // Если override ещё нет — создаём базу "с нуля" из расписания.
+  if (!ov) {
+    const sched = await loadSchedule();
+
+    // Базовая логика:
+    // для дня dateKey берём задачи "на завтра".
+    const tomorrowKey = addDaysToDateKey(dateKey, 1);
+    const wdTomorrow = weekdayKeyFromDateKey(tomorrowKey);
+
+    const baseArr = Array.isArray(sched[wdTomorrow]) ? sched[wdTomorrow] : [];
+
+    ov = {
+      dateKey,
+      tasks: baseArr.map(t => ({
+        id: String(t.id || ""),
+        title: String(t.title || "Без названия"),
+        minutes: Number(t.minutes) || 0,
+        donePercent: 0,
+        done: false,
+        meta: t.meta || null
+        // offloadDays в override не храним
+      })),
+      meta: {
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userAction: "ensureTaskInOverrideForDate:init",
+        deviceId: null
+      }
+    };
+  }
+
+  // Проверяем, есть ли уже задача с taskId
+  let task = ov.tasks.find(t => String(t.id) === String(taskId));
+
+  if (!task) {
+    // не нашли — надо поискать в расписании недели и добавить
+    const sched = await loadSchedule();
+
+    // Перебираем все дни расписания недели в поисках задачи
+    outer: {
+      for (const weekdayKey of Object.keys(sched || {})) {
+        const dayTasks = Array.isArray(sched[weekdayKey])
+          ? sched[weekdayKey]
+          : [];
+        for (const t of dayTasks) {
+          if (String(t.id) === String(taskId)) {
+            // нашли задачу в расписании → клонируем в override
+            const newTask = {
+              id: String(t.id || ""),
+              title: String(t.title || "Без названия"),
+              minutes: Number(t.minutes) || 0,
+              donePercent: 0,
+              done: false,
+              meta: t.meta || null
+            };
+            ov.tasks.push(newTask);
+            task = newTask;
+            break outer;
+          }
+        }
+      }
+    }
+  }
+
+  // Простая страховка: если всё равно нет task — создадим заглушку
+  if (!task) {
+    const fallbackTask = {
+      id: String(taskId),
+      title: "Задача",
+      minutes: 0,
+      donePercent: 0,
+      done: false,
+      meta: null
+    };
+    ov.tasks.push(fallbackTask);
+    task = fallbackTask;
+  }
+
+  // Мы НЕ сохраняем ov здесь.
+  // Сохранение делает вызывающий код, когда он реально меняет задачу.
+  //
+  // Это важно, чтобы простое ОТКРЫТИЕ дня не засоряло хранилище.
+  ov.meta = {
+    ...ov.meta,
+    updatedAt: new Date().toISOString()
+  };
+
+  return { ov, task };
+}
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/forceCreateOverrideFromSchedule.js
+-----8<-----
+import {
+  loadDayOverride,
+  loadSchedule,
+  saveDayOverride
+} from "../data/repo.js";
+
+/**
+ * forceCreateOverrideFromSchedule
+ *
+ * Это "жёсткий" сценарий.
+ * Он нужен, когда пользователь САМ попросил пересобрать день,
+ * например нажал "Сбросить день" в дашборде.
+ *
+ * Что делает:
+ *  1. Строит override (снимок задач на день) С НУЛЯ, основываясь на расписании ("на завтра").
+ *  2. Сразу сохраняет его в Storage (localStorage или Telegram CloudStorage).
+ *
+ * Чем отличается от ensureTaskInOverrideForDate:
+ *  - ensureTaskInOverrideForDate НЕ сохраняет автоматически, и создаёт override
+ *    только для редактирования конкретной задачи.
+ *
+ * ВАЖНО:
+ * Эта функция не должна вызываться просто при просмотре дня.
+ * Её можно вызывать только по явному действию пользователя.
+ */
+export default async function forceCreateOverrideFromSchedule(dateKey) {
+  // Если override уже есть — просто вернём его.
+  let ov = await loadDayOverride(dateKey);
+  if (ov && Array.isArray(ov.tasks)) {
+    return ov;
+  }
+
+  // хелперы
+  function weekdayKeyFromDateKey(dk) {
+    const [y, m, d] = String(dk).split("-");
+    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+    const map = [
+      "sunday",    // 0
+      "monday",    // 1
+      "tuesday",   // 2
+      "wednesday", // 3
+      "thursday",  // 4
+      "friday",    // 5
+      "saturday"   // 6
+    ];
+    return map[dateObj.getDay()] || "monday";
+  }
+
+  function addDaysToDateKey(dk, n) {
+    const [y, m, d] = String(dk).split("-");
+    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+    dateObj.setDate(dateObj.getDate() + Number(n || 0));
+    const yy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const dd = String(dateObj.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
+  }
+
+  const sched = await loadSchedule();
+
+  // "на завтра"
+  const tomorrowKey = addDaysToDateKey(dateKey, 1);
+  const wdTomorrow = weekdayKeyFromDateKey(tomorrowKey);
+  const baseArr = Array.isArray(sched[wdTomorrow]) ? sched[wdTomorrow] : [];
+
+  ov = {
+    dateKey,
+    tasks: baseArr.map(t => ({
+      id: String(t.id || ""),
+      title: String(t.title || "Без названия"),
+      minutes: Number(t.minutes) || 0,
+      donePercent: 0,
+      done: false,
+      meta: t.meta || null
+    })),
+    meta: {
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userAction: "forceCreateOverrideFromSchedule",
+      deviceId: null
+    }
+  };
+
+  await saveDayOverride(ov, "forceCreateOverrideFromSchedule");
+  return ov;
+}
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/resetToSchedule.js
+-----8<-----
+import forceCreateOverrideFromSchedule from "./forceCreateOverrideFromSchedule.js";
+
+/**
+ * resetToSchedule
+ *
+ * Сценарий кнопки "Сбросить день" на дашборде.
+ *
+ * Что делаем:
+ *  - Жёстко пересоздаём override для dateKey на основе расписания ("на завтра"),
+ *    с обнулёнными прогрессами.
+ *  - Сразу сохраняем.
+ *
+ * Это ИМЕННО та ситуация, когда мы разрешаем насильно перезаписать override.
+ * То есть здесь "создать override" — ок, потому что это явное действие пользователя.
+ */
+export default async function resetToSchedule({ dateKey }) {
+  const ov = await forceCreateOverrideFromSchedule(dateKey);
+  return ov;
+}
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/toggleTaskDoneForDate.js
+-----8<-----
+import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
+import { saveDayOverride } from "../data/repo.js";
+
+/**
+ * toggleTaskDoneForDate
+ *
+ * Меняет состояние чекбокса "сделано" у конкретной задачи в конкретную дату.
+ *
+ * Логика:
+ * - если задача <100% → ставим 100% и done=true
+ * - если задача уже 100% → сбрасываем в 0% и done=false
+ *
+ * Это работает ТОЛЬКО на override дня:
+ * мы не трогаем недельное расписание.
+ */
+export default async function toggleTaskDoneForDate({ dateKey, taskId }) {
+  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
+
+  const wasDone = task.donePercent >= 100;
+  const newPct = wasDone ? 0 : 100;
+
+  task.donePercent = newPct;
+  task.done = newPct >= 100;
+
+  ov.tasks = ov.tasks.map(t => {
+    if (String(t.id) === String(taskId)) {
+      return {
+        ...t,
+        donePercent: task.donePercent,
+        done: task.done
+      };
+    }
+    return t;
+  });
+
+  ov.meta = {
+    ...ov.meta,
+    updatedAt: new Date().toISOString(),
+    userAction: "toggleTaskDoneForDate"
+  };
+
+  await saveDayOverride(ov, "toggleTaskDoneForDate");
+  return { taskId, donePercent: task.donePercent, done: task.done };
+}
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/gcOldDates.js
+-----8<-----
+/**
+ * gcOldDates
+ *
+ * Заглушка на будущее.
+ * Идея: чистить очень старые override-даты,
+ * чтобы не раздувать хранилище.
+ *
+ * Пока что не вызывается из UI.
+ */
+export default async function gcOldDates() {
+  // TODO: пройтись по Storage.getKeys(),
+  // найти planner.override.YYYY-MM-DD.v1,
+  // удалить очень старые.
+  return;
+}
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/setupSyncTriggers.js
+-----8<-----
+/**
+ * setupSyncTriggers
+ *
+ * Заглушка. План:
+ * - тут в будущем можно повесить слушатели,
+ *   которые при изменениях в override вызывают syncNow().
+ *
+ * Пока не используется.
+ */
+export default function setupSyncTriggers() {
+  // TODO in future: вызвать syncNow() при изменениях
+  return;
+}
+-----8<-----
+===FILE_END===
+
+
+===FILE_START===
+PATH: js/usecases/syncNow.js
+-----8<-----
+/**
+ * syncNow
+ *
+ * Заглушка под будущую синхронизацию в облако Telegram.
+ *
+ * Сейчас Storage уже умеет писать либо в localStorage,
+ * либо в Telegram.WebApp.CloudStorage (когда доступно).
+ *
+ * В будущем тут можно будет сделать:
+ *  - собрать изменения локально,
+ *  - отправить в облако,
+ *  - обработать конфликты.
+ */
+export default async function syncNow() {
+  // TODO: реализовать реальную синхронизацию между устройствами
+  return;
 }
 -----8<-----
 ===FILE_END===

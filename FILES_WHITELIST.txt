@@ -3,7 +3,6 @@
 index.html
 assets
 js
-tests
 # либо так:
 # assets/*
 # js/*

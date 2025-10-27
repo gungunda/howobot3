@@ -1,24 +1,51 @@
-// js/usecases/editTaskInSchedule.js
-// Правка задачи прямо в недельном расписании.
 import { loadSchedule, saveSchedule } from "../data/repo.js";
 
-export default async function editTaskInSchedule({ weekdayKey, taskId, patch }){
+/**
+ * editTaskInSchedule
+ *
+ * Меняем задачу в недельном расписании (экран "Расписание недели").
+ * Это влияет на будущее, но не переписывает прошедшие override-дни.
+ *
+ * Аргументы:
+ *  - weekday: "monday"
+ *  - taskId: "math1"
+ *  - patch: {
+ *      title?: string,
+ *      minutes?: number,
+ *      offloadDays?: string[]
+ *    }
+ */
+export async function editTaskInSchedule({ weekday, taskId, patch }) {
   const sched = await loadSchedule();
-  const arr = Array.isArray(sched[weekdayKey]) ? sched[weekdayKey] : [];
-  const t = arr.find(x => String(x.id||"") === String(taskId||""));
-  if (t && patch){
-    if (typeof patch.title==="string") t.title = patch.title;
-    if (
-      typeof patch.minutes==="number" &&
-      !Number.isNaN(patch.minutes) &&
-      patch.minutes>=0
-    ){
-      t.minutes = patch.minutes;
+
+  let dayArr = Array.isArray(sched[weekday]) ? sched[weekday] : [];
+  dayArr = dayArr.map(task => {
+    if (String(task.id) !== String(taskId)) return task;
+
+    const updated = { ...task };
+
+    if (patch.title !== undefined) {
+      updated.title = String(patch.title || "").trim() || "Без названия";
     }
-    if (Array.isArray(patch.offloadDays)){
-      t.offloadDays = [...patch.offloadDays];
+
+    if (patch.minutes !== undefined) {
+      let mins = Number(patch.minutes) || 0;
+      if (mins < 0) mins = 0;
+      updated.minutes = mins;
     }
-  }
+
+    if (patch.offloadDays !== undefined) {
+      updated.offloadDays = Array.isArray(patch.offloadDays)
+        ? [...patch.offloadDays]
+        : [];
+    }
+
+    return updated;
+  });
+
+  sched[weekday] = dayArr;
   await saveSchedule(sched, "editTaskInSchedule");
-  return sched;
+  return true;
 }
+
+export default editTaskInSchedule;

@@ -1,12 +1,19 @@
-// js/usecases/resetToSchedule.js
-// Перезаписать день заново из расписания (сброс прогресса).
-import ensureOverrideForDate from "./ensureOverrideForDate.js";
-import { saveDayOverride } from "../data/repo.js";
+import forceCreateOverrideFromSchedule from "./forceCreateOverrideFromSchedule.js";
 
-export default async function resetToSchedule(dateKey){
-  const ov = await ensureOverrideForDate(dateKey);
-  // ensureOverrideForDate уже создаёт день из шаблона с 0%,
-  // так что просто пересохраняем его с actionHint.
-  await saveDayOverride(ov, "resetToSchedule");
+/**
+ * resetToSchedule
+ *
+ * Сценарий кнопки "Сбросить день" на дашборде.
+ *
+ * Что делаем:
+ *  - Жёстко пересоздаём override для dateKey на основе расписания ("на завтра"),
+ *    с обнулёнными прогрессами.
+ *  - Сразу сохраняем.
+ *
+ * Это ИМЕННО та ситуация, когда мы разрешаем насильно перезаписать override.
+ * То есть здесь "создать override" — ок, потому что это явное действие пользователя.
+ */
+export default async function resetToSchedule({ dateKey }) {
+  const ov = await forceCreateOverrideFromSchedule(dateKey);
   return ov;
 }
