@@ -585,7 +585,7 @@ function bindSchedule(state) {
         try {
           await addUC({
             weekdayKey: weekday,
-            task: {
+            taskData: {
               title: newTitle,
               minutes: newMin,
               offloadDays
