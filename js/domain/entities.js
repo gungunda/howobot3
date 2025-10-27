@@ -2,18 +2,23 @@
 // js/domain/entities.js
 //
 // Domain layer (чистая бизнес-логика приложения).
-// Здесь нет ни DOM, ни работы с Telegram API, ни Storage.
-// Есть только:
-//   - Task        (одно задание/домашка)
-//   - DayOverride (снимок конкретного календарного дня)
-//   - Schedule    (расписание недели)
-// Плюс вспомогательные утилиты для дат.
+// Здесь нет ни DOM, ни Telegram API, ни Storage.
+// Здесь описаны три сущности предметной области:
+//
+// - Task        = отдельная учебная задача (домашка)
+// - DayOverride = конкретный день календаря с прогрессом
+// - Schedule    = недельное расписание (шаблон)
+//
+// Плюс есть функции для работы с датами.
 //
 
 // =======================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДАТ
 // =======================================================
 
+/**
+ * toDateKey(Date) -> "YYYY-MM-DD"
+ */
 export function toDateKey(dateObj) {
   const yyyy = dateObj.getFullYear();
   const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
@@ -21,6 +26,9 @@ export function toDateKey(dateObj) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+/**
+ * addDaysToDateKey("2025-10-27", 1) -> "2025-10-28"
+ */
 export function addDaysToDateKey(dateKey, n) {
   const [y, m, d] = String(dateKey).split("-");
   const dt = new Date(Number(y), Number(m) - 1, Number(d));
@@ -28,6 +36,12 @@ export function addDaysToDateKey(dateKey, n) {
   return toDateKey(dt);
 }
 
+/**
+ * weekdayKeyFromDateKey("2025-10-27") -> "monday"
+ *
+ * Это нужно, потому что расписание у нас хранится по ключам:
+ * monday, tuesday, ... sunday
+ */
 export function weekdayKeyFromDateKey(dateKey) {
   const [y, m, d] = String(dateKey).split("-");
   const dt = new Date(Number(y), Number(m) - 1, Number(d));
@@ -43,12 +57,18 @@ export function weekdayKeyFromDateKey(dateKey) {
   return map[dt.getDay()] || "monday";
 }
 
+/**
+ * clampPercent(137) -> 100
+ * clampPercent(-50) -> 0
+ * clampPercent(42)  -> 42
+ */
 export function clampPercent(x) {
   let v = Math.round(Number(x) || 0);
   if (v < 0) v = 0;
   if (v > 100) v = 100;
   return v;
 }
+
 
 // =======================================================
 // КЛАСС Task
@@ -65,6 +85,17 @@ export function clampPercent(x) {
 //
 
 export class Task {
+  /**
+   * Конструктор.
+   *
+   * id           - строка. Если не передана, мы сгенерируем.
+   * title        - название задания
+   * minutes      - длительность в минутах
+   * donePercent  - прогресс 0..100
+   * done         - true если выполнено
+   * offloadDays  - массив дней недели, куда можно "разгружать" заранее
+   * meta         - служебка
+   */
   constructor({
     id,
     title,
@@ -97,10 +128,17 @@ export class Task {
     this.meta = meta || null;
   }
 
+  /**
+   * Удобный геттер: задача считается сделанной, если 100%.
+   */
   isDone() {
     return this.donePercent >= 100;
   }
 
+  /**
+   * Вернуть НОВУЮ задачу с обновлённым процентом выполнения.
+   * Исходный объект не мутируем.
+   */
   withProgressPercent(newPercent) {
     const pct = clampPercent(newPercent);
     return new Task({
@@ -110,6 +148,10 @@ export class Task {
     });
   }
 
+  /**
+   * Вернуть НОВУЮ задачу с обновлёнными текстовыми полями
+   * (title, minutes). Используется для inline-редактирования.
+   */
   withInlinePatch(patch) {
     return new Task({
       ...this,
@@ -125,6 +167,10 @@ export class Task {
     });
   }
 
+  /**
+   * Подготовка к сохранению в Storage:
+   * превращаем в обычный объект без методов.
+   */
   toJSON() {
     return {
       id: this.id,
@@ -137,6 +183,9 @@ export class Task {
     };
   }
 
+  /**
+   * Восстановление Task из plain-объекта (например после load из repo).
+   */
   static fromJSON(raw) {
     if (!raw || typeof raw !== "object") {
       return new Task({});
@@ -152,6 +201,11 @@ export class Task {
     });
   }
 
+  /**
+   * Создать задачу для Override (конкретного дня)
+   * на основе задачи из расписания.
+   * Прогресс всегда сбрасывается в 0.
+   */
   static fromScheduleTask(scheduleTask) {
     return new Task({
       id: scheduleTask.id,
@@ -159,25 +213,29 @@ export class Task {
       minutes: scheduleTask.minutes,
       donePercent: 0,
       done: false,
-      offloadDays: [], // в override не нужно
+      offloadDays: [], // в override разгрузка не важна
       meta: scheduleTask.meta || null
     });
   }
 }
 
+
 // =======================================================
 // КЛАСС DayOverride
 // =======================================================
 //
-// DayOverride = снимок конкретного календарного дня.
-// Пример: "2025-10-27", список задач на этот день,
-// и прогресс по каждой задаче.
+// DayOverride = снимок конкретного календарного дня
+// (например "2025-10-27").
+//
+// Тут мы храним только задачи на этот день и их прогресс,
+// плюс мету (когда обновлялось, какое действие делали).
 //
 
 export class DayOverride {
   constructor({ dateKey, tasks, meta }) {
     this.dateKey = String(dateKey);
 
+    // Гарантируем, что tasks — это массив Task
     this.tasks = Array.isArray(tasks)
       ? tasks.map(t => (t instanceof Task ? t : Task.fromJSON(t)))
       : [];
@@ -190,6 +248,9 @@ export class DayOverride {
     };
   }
 
+  /**
+   * Обновить тех.инфу о том, что DayOverride менялся.
+   */
   touch(userAction) {
     this.meta = {
       ...this.meta,
@@ -198,12 +259,20 @@ export class DayOverride {
     };
   }
 
+  /**
+   * Найти задачу по id.
+   */
   getTask(taskId) {
     return this.tasks.find(
       t => String(t.id) === String(taskId)
     );
   }
 
+  /**
+   * Убедиться, что задача с таким id есть в этом дне.
+   * Если нет — попробуем подтянуть её из расписания.
+   * Если даже в расписании нет — создадим заглушку.
+   */
   ensureTask(taskId, scheduleInstance) {
     let task = this.getTask(taskId);
     if (task) return task;
@@ -234,6 +303,9 @@ export class DayOverride {
     return fallback;
   }
 
+  /**
+   * Изменить прогресс задачи на delta (обычно +10 или -10).
+   */
   bumpTaskPercent(taskId, delta) {
     const current = this.getTask(taskId);
     if (!current) return;
@@ -252,6 +324,11 @@ export class DayOverride {
     return updatedTask;
   }
 
+  /**
+   * Переключить чекбокс "сделано":
+   * если было <100%, делаем 100;
+   * если было 100, делаем 0.
+   */
   toggleTaskDone(taskId) {
     const current = this.getTask(taskId);
     if (!current) return;
@@ -268,6 +345,10 @@ export class DayOverride {
     return updatedTask;
   }
 
+  /**
+   * Inline-редактирование задачи именно в этом дне:
+   * поменять title и/или minutes.
+   */
   editTaskInline(taskId, patch) {
     const current = this.getTask(taskId);
     if (!current) return;
@@ -282,6 +363,9 @@ export class DayOverride {
     return updatedTask;
   }
 
+  /**
+   * Превратить DayOverride в plain-объект для сохранения.
+   */
   toJSON() {
     return {
       dateKey: this.dateKey,
@@ -290,6 +374,10 @@ export class DayOverride {
     };
   }
 
+  /**
+   * Восстановить DayOverride из plain-объекта
+   * (например то, что прочитали из repo.loadDayOverride()).
+   */
   static fromJSON(raw) {
     if (!raw || typeof raw !== "object") {
       return new DayOverride({
@@ -307,6 +395,10 @@ export class DayOverride {
     });
   }
 
+  /**
+   * Создать новый DayOverride "с нуля" на эту дату
+   * по расписанию ("домашка на завтра").
+   */
   static createFromSchedule(dateKey, scheduleTasksForTomorrow) {
     const tasks = Array.isArray(scheduleTasksForTomorrow)
       ? scheduleTasksForTomorrow.map(t =>
@@ -327,12 +419,13 @@ export class DayOverride {
   }
 }
 
+
 // =======================================================
 // КЛАСС Schedule
 // =======================================================
 //
 // Schedule = расписание недели.
-// Формат внутренний:
+// Пример внутреннего вида:
 // {
 //   monday:    [Task, Task, ...],
 //   tuesday:   [...],
@@ -340,8 +433,11 @@ export class DayOverride {
 //   sunday:    [...]
 // }
 //
-// Это "шаблон недели". Тут нет прогресса выполнения.
-// Из него мы умеем сделать DayOverride для конкретной даты.
+// Это шаблон: "в среду задают математику на 30 минут,
+// можно разгружать на вторник".
+// Здесь НЕТ прогресса выполнения за конкретный день.
+//
+// Из Schedule мы умеем собрать DayOverride для конкретного dateKey.
 //
 
 export class Schedule {
@@ -380,7 +476,7 @@ export class Schedule {
    */
   withNewTask(weekdayKey, taskData) {
     const newTask = new Task({
-      id: taskData?.id, // можно не передавать, Task сам сгенерит
+      id: taskData?.id, // можно не указывать, Task сам сгенерит
       title: taskData?.title ?? "Без названия",
       minutes:
         taskData?.minutes !== undefined
@@ -406,8 +502,11 @@ export class Schedule {
   }
 
   /**
-   * Изменить существующую задачу в расписании.
-   * Можно поменять title, minutes, offloadDays.
+   * Изменить существующую задачу в расписании:
+   * - title
+   * - minutes
+   * - offloadDays
+   *
    * Возвращает НОВЫЙ Schedule.
    */
   withEditedTask(weekdayKey, taskId, patch) {
@@ -419,13 +518,13 @@ export class Schedule {
           return task;
         }
 
-        // сначала обновляем название/время
+        // сначала обновляем title/minutes через withInlinePatch
         let updated = task.withInlinePatch({
           title: patch?.title,
           minutes: patch?.minutes
         });
 
-        // потом при необходимости подменяем offloadDays
+        // потом при необходимости обновляем offloadDays
         if (patch?.offloadDays !== undefined) {
           updated = new Task({
             ...updated,
@@ -457,8 +556,9 @@ export class Schedule {
   }
 
   /**
-   * Найти задачу по id в любом дне недели.
-   * Нужна для ensureTask(...) в DayOverride.
+   * Найти задачу по id в ЛЮБОЙ день недели.
+   * Это нужно DayOverride.ensureTask(...), чтобы,
+   * если в override нет задачи, мы могли подтянуть её из расписания.
    */
   findTaskAnywhere(taskId) {
     for (const weekdayKey of Object.keys(this.week)) {
@@ -473,11 +573,14 @@ export class Schedule {
   }
 
   /**
-   * Получить массив задач, который надо положить в override
-   * для конкретного календарного дня dateKey.
+   * Вернуть массив задач, которые должны лечь в override
+   * для dateKey.
    *
-   * Правило: на дату D мы считаем домашку "на завтра".
-   * То есть берём weekday завтрашнего дня.
+   * Правило нашего приложения:
+   *   "домашка делается на завтра".
+   *
+   * То есть если сегодня понедельник (2025-10-27),
+   * мы берём расписание вторника.
    */
   tasksForOverrideDate(dateKey) {
     const tomorrowKey = addDaysToDateKey(dateKey, 1);
@@ -486,8 +589,8 @@ export class Schedule {
   }
 
   /**
-   * Построить DayOverride на конкретный день dateKey
-   * из расписания (домашка "на завтра").
+   * На основе расписания недели построить DayOverride
+   * (снимок на конкретную дату).
    */
   makeOverrideForDate(dateKey) {
     const tomorrowTasks = this.tasksForOverrideDate(dateKey);
@@ -497,6 +600,9 @@ export class Schedule {
     );
   }
 
+  /**
+   * Сериализация расписания для сохранения в Storage.
+   */
   toJSON() {
     const out = {};
     for (const dayKey of Object.keys(this.week)) {
@@ -507,6 +613,9 @@ export class Schedule {
     return out;
   }
 
+  /**
+   * Восстановление расписания после repo.loadSchedule().
+   */
   static fromJSON(raw) {
     return new Schedule(raw || {});
   }
