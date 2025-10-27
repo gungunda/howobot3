@@ -3,17 +3,18 @@ import forceCreateOverrideFromSchedule from "./forceCreateOverrideFromSchedule.j
 /**
  * resetToSchedule
  *
- * Сценарий кнопки "Сбросить день" на дашборде.
+ * Это сценарий для кнопки "Сбросить день".
+ * Он просто вызывает forceCreateOverrideFromSchedule(dateKey).
  *
- * Что делаем:
- *  - Жёстко пересоздаём override для dateKey на основе расписания ("на завтра"),
- *    с обнулёнными прогрессами.
- *  - Сразу сохраняем.
+ * Почему у нас остаётся отдельный usecase resetToSchedule?
+ * Потому что UI думает в терминах "сбросить день",
+ * а домен думает в терминах "форс-создать override заново".
  *
- * Это ИМЕННО та ситуация, когда мы разрешаем насильно перезаписать override.
- * То есть здесь "создать override" — ок, потому что это явное действие пользователя.
+ * Это читабельно для джуна:
+ *   - resetToSchedule → читается из UI
+ *   - forceCreateOverrideFromSchedule → доменная операция
  */
 export default async function resetToSchedule({ dateKey }) {
-  const ov = await forceCreateOverrideFromSchedule(dateKey);
-  return ov;
+  const ovEntity = await forceCreateOverrideFromSchedule(dateKey);
+  return ovEntity;
 }

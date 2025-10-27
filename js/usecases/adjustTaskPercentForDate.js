@@ -1,41 +1,57 @@
-import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
-import { saveDayOverride } from "../data/repo.js";
+import { loadDayOverride, saveDayOverride, loadSchedule } from "../data/repo.js";
+import { DayOverride, Schedule } from "../domain/entities.js";
 
 /**
  * adjustTaskPercentForDate
  *
- * Изменяет прогресс задачи (donePercent) на ±10%.
- * Это вызывается когда пользователь жмёт кнопки "-10%" или "+10%" в дашборде.
+ * Сценарий: пользователь нажал "+10%" или "-10%" у задачи на конкретный день.
  *
- * ВАЖНО:
- * - Мы не трогаем глобальное расписание недели.
- * - Мы работаем только с override для конкретной даты.
- * - Если override не существовал, он создаётся (только сейчас,
- *   то есть при реальном редактировании, что нам и нужно).
+ * Что должно происходить:
+ *  1. У нас должен существовать DayOverride для dateKey (снимок задач дня).
+ *     Если его ещё нет, мы должны его создать из расписания недели.
+ *
+ *  2. В этом DayOverride должна существовать задача с данным taskId.
+ *     Если нет — мы берём её из Schedule и добавляем (ensureTask).
+ *
+ *  3. Увеличиваем или уменьшаем прогресс задачи на delta (обычно +10 или -10).
+ *     Логика обновления процента и done-флага живёт внутри DayOverride/Task.
+ *
+ *  4. Сохраняем обратно через repo.
  */
 export async function adjustTaskPercentForDate({ dateKey, taskId, delta }) {
-  // убеждаемся, что в override дня есть эта задача
-  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
+  // 1. Загружаем расписание (недельный шаблон) как Schedule.
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
 
-  // скорректировать donePercent
-  const newPctRaw = Number(task.donePercent || 0) + Number(delta || 0);
-  let newPct = Math.round(newPctRaw);
-  if (newPct < 0) newPct = 0;
-  if (newPct > 100) newPct = 100;
+  // 2. Загружаем override для этого дня.
+  let rawOv = await loadDayOverride(dateKey);
+  let overrideEntity;
 
-  task.donePercent = newPct;
-  task.done = newPct >= 100;
+  if (rawOv) {
+    overrideEntity = DayOverride.fromJSON(rawOv);
+  } else {
+    // если оверрайда нет, создаём на основе расписания
+    overrideEntity = schedule.makeOverrideForDate(dateKey);
+  }
 
-  // пересобрать список задач (заменяем задачу с тем же id)
-  ov.tasks = ov.tasks.map(t => {
-    if (String(t.id) === String(taskId)) {
-      return { ...t, donePercent: task.donePercent, done: task.done };
-    }
-    return t;
-  });
+  // 3. Гарантируем, что задача в этом override вообще существует.
+  overrideEntity.ensureTask(taskId, schedule);
 
-  await saveDayOverride(ov, "adjustTaskPercentForDate");
-  return { taskId, donePercent: task.donePercent };
+  // 4. Меняем прогресс через bumpTaskPercent (это +delta или -delta).
+  const updatedTask = overrideEntity.bumpTaskPercent(taskId, delta);
+
+  // 5. Сохраняем новое состояние дня.
+  await saveDayOverride(
+    overrideEntity.toJSON(),
+    "adjustTaskPercentForDate"
+  );
+
+  // 6. Возвращаем инфу для мгновенного обновления UI.
+  return {
+    taskId,
+    donePercent: updatedTask?.donePercent ?? 0,
+    done: updatedTask?.done ?? false
+  };
 }
 
 export default adjustTaskPercentForDate;

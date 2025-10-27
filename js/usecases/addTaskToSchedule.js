@@ -1,43 +1,35 @@
 import { loadSchedule, saveSchedule } from "../data/repo.js";
+import { Schedule } from "../domain/entities.js";
 
 /**
  * addTaskToSchedule
- * Добавляет новую задачу в расписание недели (шаблон).
  *
- * Пояснение:
- * Расписание недели — это не конкретный день календаря,
- * а "модель по дням недели". Например:
- *   monday: [ { id, title, minutes, offloadDays[] }, ... ]
+ * Сценарий: пользователь добавляет новую задачу в расписание недели.
  *
- * Когда ученик потом открывает дашборд,
- * мы на его выбранный dateKey берём задачи "на завтра"
- * из расписания и создаём override.
+ * Что происходит:
+ *  1. Загружаем расписание (Schedule.fromJSON(...))
+ *  2. Добавляем новую задачу в выбранный день недели
+ *     через Schedule.withNewTask(weekdayKey, taskData)
+ *  3. Сохраняем расписание обратно
  *
- * Здесь мы просто дописываем новую задачу в конкретный weekdayKey.
+ * Пример taskData:
+ * {
+ *   title: "Математика, упр. 7",
+ *   minutes: 30,
+ *   offloadDays: ["tuesday", "thursday"]
+ * }
  */
-export async function addTaskToSchedule({ weekdayKey, task }) {
-  const sched = await loadSchedule();
+export default async function addTaskToSchedule({ weekdayKey, taskData }) {
+  // 1. Загружаем текущее расписание
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
 
-  // убедимся, что там есть массив
-  if (!Array.isArray(sched[weekdayKey])) {
-    sched[weekdayKey] = [];
-  }
+  // 2. Добавляем новую задачу
+  const updatedSchedule = schedule.withNewTask(weekdayKey, taskData);
 
-  // генерим id (простая версия: timestamp + random)
-  const newTask = {
-    id: "task_" + Date.now().toString(36) + "_" + Math.floor(Math.random()*1e6),
-    title: task.title || "Без названия",
-    minutes: Number(task.minutes) || 0,
-    offloadDays: Array.isArray(task.offloadDays) ? [...task.offloadDays] : [],
-    donePercent: 0,
-    done: false,
-    meta: task.meta || null
-  };
+  // 3. Сохраняем обратно
+  await saveSchedule(updatedSchedule.toJSON(), "addTaskToSchedule");
 
-  sched[weekdayKey].push(newTask);
-
-  await saveSchedule(sched, "addTaskToSchedule");
-  return newTask;
+  // 4. Возвращаем свежую копию расписания (для UI)
+  return updatedSchedule;
 }
-
-export default addTaskToSchedule;

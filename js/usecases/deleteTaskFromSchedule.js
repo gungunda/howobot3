@@ -1,23 +1,23 @@
 import { loadSchedule, saveSchedule } from "../data/repo.js";
+import { Schedule } from "../domain/entities.js";
 
 /**
  * deleteTaskFromSchedule
  *
- * Удаляет задачу из недельного расписания (шаблона),
- * то есть из секции "Расписание недели".
+ * Сценарий: пользователь удаляет задачу из расписания недели.
  *
- * Она НЕ трогает уже созданные override-дни в прошлом.
+ * Логика:
+ *  1. Загружаем расписание
+ *  2. Вызываем Schedule.withTaskRemoved(weekdayKey, taskId)
+ *  3. Сохраняем обратно
  */
-export async function deleteTaskFromSchedule({ weekdayKey, taskId }) {
-  const sched = await loadSchedule();
+export default async function deleteTaskFromSchedule({ weekdayKey, taskId }) {
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
 
-  const arr = Array.isArray(sched[weekdayKey]) ? sched[weekdayKey] : [];
-  const filtered = arr.filter(t => String(t.id) !== String(taskId));
+  const updatedSchedule = schedule.withTaskRemoved(weekdayKey, taskId);
 
-  sched[weekdayKey] = filtered;
-  await saveSchedule(sched, "deleteTaskFromSchedule");
+  await saveSchedule(updatedSchedule.toJSON(), "deleteTaskFromSchedule");
 
-  return true;
+  return updatedSchedule;
 }
-
-export default deleteTaskFromSchedule;

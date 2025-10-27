@@ -1,86 +1,55 @@
-import {
-  loadDayOverride,
-  loadSchedule,
-  saveDayOverride
-} from "../data/repo.js";
+import { loadDayOverride, loadSchedule, saveDayOverride } from "../data/repo.js";
+import { DayOverride, Schedule } from "../domain/entities.js";
 
 /**
  * forceCreateOverrideFromSchedule
  *
  * Это "жёсткий" сценарий.
- * Он нужен, когда пользователь САМ попросил пересобрать день,
- * например нажал "Сбросить день" в дашборде.
+ * Он нужен, когда пользователь специально сказал:
+ *   "Сбросить день"
  *
- * Что делает:
- *  1. Строит override (снимок задач на день) С НУЛЯ, основываясь на расписании ("на завтра").
- *  2. Сразу сохраняет его в Storage (localStorage или Telegram CloudStorage).
+ * Что он делает:
+ *   - Берёт актуальное расписание (Schedule)
+ *   - Строит новый DayOverride на dateKey, исходя из правила
+ *     "домашка на завтра"
+ *   - Сразу сохраняет этот DayOverride в хранилище, затирая старое
  *
- * Чем отличается от ensureTaskInOverrideForDate:
- *  - ensureTaskInOverrideForDate НЕ сохраняет автоматически, и создаёт override
- *    только для редактирования конкретной задачи.
+ * Это намеренное действие пользователя, поэтому да,
+ * мы имеем право перезаписать override.
  *
- * ВАЖНО:
- * Эта функция не должна вызываться просто при просмотре дня.
- * Её можно вызывать только по явному действию пользователя.
+ * Важно отличие от обычного просмотра:
+ *   при просто просмотре дня override не создаётся автоматически.
  */
 export default async function forceCreateOverrideFromSchedule(dateKey) {
-  // Если override уже есть — просто вернём его.
-  let ov = await loadDayOverride(dateKey);
-  if (ov && Array.isArray(ov.tasks)) {
-    return ov;
+  // 1. Загружаем расписание недели как Schedule
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
+
+  // 2. Проверим, может override уже есть
+  let rawOv = await loadDayOverride(dateKey);
+  let overrideEntity;
+
+  if (rawOv) {
+    // Если override уже есть — в контексте "жёсткого сброса"
+    // мы всё равно хотим его обновить полностью:
+    // т.е. пересоздать на основе расписания.
+    //
+    // То есть мы НЕ просто возвращаем старый ov,
+    // а именно перезаписываем задачами "на завтра".
+    overrideEntity = schedule.makeOverrideForDate(dateKey);
+    overrideEntity.meta.userAction = "forceCreateOverrideFromSchedule(resetExisting)";
+  } else {
+    // Если override не было, просто создаём новый
+    overrideEntity = schedule.makeOverrideForDate(dateKey);
+    overrideEntity.meta.userAction = "forceCreateOverrideFromSchedule(new)";
   }
 
-  // хелперы
-  function weekdayKeyFromDateKey(dk) {
-    const [y, m, d] = String(dk).split("-");
-    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
-    const map = [
-      "sunday",    // 0
-      "monday",    // 1
-      "tuesday",   // 2
-      "wednesday", // 3
-      "thursday",  // 4
-      "friday",    // 5
-      "saturday"   // 6
-    ];
-    return map[dateObj.getDay()] || "monday";
-  }
+  // 3. Сохраняем новое состояние дня
+  await saveDayOverride(
+    overrideEntity.toJSON(),
+    "forceCreateOverrideFromSchedule"
+  );
 
-  function addDaysToDateKey(dk, n) {
-    const [y, m, d] = String(dk).split("-");
-    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
-    dateObj.setDate(dateObj.getDate() + Number(n || 0));
-    const yy = dateObj.getFullYear();
-    const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
-    const dd = String(dateObj.getDate()).padStart(2, "0");
-    return `${yy}-${mm}-${dd}`;
-  }
-
-  const sched = await loadSchedule();
-
-  // "на завтра"
-  const tomorrowKey = addDaysToDateKey(dateKey, 1);
-  const wdTomorrow = weekdayKeyFromDateKey(tomorrowKey);
-  const baseArr = Array.isArray(sched[wdTomorrow]) ? sched[wdTomorrow] : [];
-
-  ov = {
-    dateKey,
-    tasks: baseArr.map(t => ({
-      id: String(t.id || ""),
-      title: String(t.title || "Без названия"),
-      minutes: Number(t.minutes) || 0,
-      donePercent: 0,
-      done: false,
-      meta: t.meta || null
-    })),
-    meta: {
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userAction: "forceCreateOverrideFromSchedule",
-      deviceId: null
-    }
-  };
-
-  await saveDayOverride(ov, "forceCreateOverrideFromSchedule");
-  return ov;
+  // 4. Возвращаем сущность (или plain можно отдать, но сущность удобнее тестировать)
+  return overrideEntity;
 }

@@ -2,180 +2,40 @@
 PATH: js/usecases/addTaskToSchedule.js
 -----8<-----
 import { loadSchedule, saveSchedule } from "../data/repo.js";
+import { Schedule } from "../domain/entities.js";
 
 /**
  * addTaskToSchedule
- * Добавляет новую задачу в расписание недели (шаблон).
  *
- * Пояснение:
- * Расписание недели — это не конкретный день календаря,
- * а "модель по дням недели". Например:
- *   monday: [ { id, title, minutes, offloadDays[] }, ... ]
+ * Сценарий: пользователь добавляет новую задачу в расписание недели.
  *
- * Когда ученик потом открывает дашборд,
- * мы на его выбранный dateKey берём задачи "на завтра"
- * из расписания и создаём override.
+ * Что происходит:
+ *  1. Загружаем расписание (Schedule.fromJSON(...))
+ *  2. Добавляем новую задачу в выбранный день недели
+ *     через Schedule.withNewTask(weekdayKey, taskData)
+ *  3. Сохраняем расписание обратно
  *
- * Здесь мы просто дописываем новую задачу в конкретный weekdayKey.
+ * Пример taskData:
+ * {
+ *   title: "Математика, упр. 7",
+ *   minutes: 30,
+ *   offloadDays: ["tuesday", "thursday"]
+ * }
  */
-export async function addTaskToSchedule({ weekdayKey, task }) {
-  const sched = await loadSchedule();
+export default async function addTaskToSchedule({ weekdayKey, taskData }) {
+  // 1. Загружаем текущее расписание
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
 
-  // убедимся, что там есть массив
-  if (!Array.isArray(sched[weekdayKey])) {
-    sched[weekdayKey] = [];
-  }
+  // 2. Добавляем новую задачу
+  const updatedSchedule = schedule.withNewTask(weekdayKey, taskData);
 
-  // генерим id (простая версия: timestamp + random)
-  const newTask = {
-    id: "task_" + Date.now().toString(36) + "_" + Math.floor(Math.random()*1e6),
-    title: task.title || "Без названия",
-    minutes: Number(task.minutes) || 0,
-    offloadDays: Array.isArray(task.offloadDays) ? [...task.offloadDays] : [],
-    donePercent: 0,
-    done: false,
-    meta: task.meta || null
-  };
+  // 3. Сохраняем обратно
+  await saveSchedule(updatedSchedule.toJSON(), "addTaskToSchedule");
 
-  sched[weekdayKey].push(newTask);
-
-  await saveSchedule(sched, "addTaskToSchedule");
-  return newTask;
+  // 4. Возвращаем свежую копию расписания (для UI)
+  return updatedSchedule;
 }
-
-export default addTaskToSchedule;
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/adjustTaskPercentForDate.js
------8<-----
-import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
-import { saveDayOverride } from "../data/repo.js";
-
-/**
- * adjustTaskPercentForDate
- *
- * Изменяет прогресс задачи (donePercent) на ±10%.
- * Это вызывается когда пользователь жмёт кнопки "-10%" или "+10%" в дашборде.
- *
- * ВАЖНО:
- * - Мы не трогаем глобальное расписание недели.
- * - Мы работаем только с override для конкретной даты.
- * - Если override не существовал, он создаётся (только сейчас,
- *   то есть при реальном редактировании, что нам и нужно).
- */
-export async function adjustTaskPercentForDate({ dateKey, taskId, delta }) {
-  // убеждаемся, что в override дня есть эта задача
-  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
-
-  // скорректировать donePercent
-  const newPctRaw = Number(task.donePercent || 0) + Number(delta || 0);
-  let newPct = Math.round(newPctRaw);
-  if (newPct < 0) newPct = 0;
-  if (newPct > 100) newPct = 100;
-
-  task.donePercent = newPct;
-  task.done = newPct >= 100;
-
-  // пересобрать список задач (заменяем задачу с тем же id)
-  ov.tasks = ov.tasks.map(t => {
-    if (String(t.id) === String(taskId)) {
-      return { ...t, donePercent: task.donePercent, done: task.done };
-    }
-    return t;
-  });
-
-  await saveDayOverride(ov, "adjustTaskPercentForDate");
-  return { taskId, donePercent: task.donePercent };
-}
-
-export default adjustTaskPercentForDate;
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/deleteTaskFromSchedule.js
------8<-----
-import { loadSchedule, saveSchedule } from "../data/repo.js";
-
-/**
- * deleteTaskFromSchedule
- *
- * Удаляет задачу из недельного расписания (шаблона),
- * то есть из секции "Расписание недели".
- *
- * Она НЕ трогает уже созданные override-дни в прошлом.
- */
-export async function deleteTaskFromSchedule({ weekdayKey, taskId }) {
-  const sched = await loadSchedule();
-
-  const arr = Array.isArray(sched[weekdayKey]) ? sched[weekdayKey] : [];
-  const filtered = arr.filter(t => String(t.id) !== String(taskId));
-
-  sched[weekdayKey] = filtered;
-  await saveSchedule(sched, "deleteTaskFromSchedule");
-
-  return true;
-}
-
-export default deleteTaskFromSchedule;
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/editTaskInline.js
------8<-----
-import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
-import { saveDayOverride } from "../data/repo.js";
-
-/**
- * editTaskInline
- *
- * Меняем заголовок и минуты задачи на КОНКРЕТНЫЙ ДЕНЬ,
- * когда пользователь нажал ✎ на дашборде и отредактировал поля.
- *
- * Это НЕ меняет расписание недели! Только конкретный снимок (override) даты.
- *
- * Аргументы:
- *  - dateKey: "2025-10-27"
- *  - taskId: "math1"
- *  - patch: { title?:string, minutes?:number }
- */
-export async function editTaskInline({ dateKey, taskId, patch }) {
-  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
-
-  // обновляем task локально
-  if (patch.title !== undefined) {
-    task.title = String(patch.title || "").trim() || "Без названия";
-  }
-
-  if (patch.minutes !== undefined) {
-    let mins = Number(patch.minutes) || 0;
-    if (mins < 0) mins = 0;
-    task.minutes = mins;
-  }
-
-  // применяем на список
-  ov.tasks = ov.tasks.map(t => {
-    if (String(t.id) === String(taskId)) {
-      return {
-        ...t,
-        title: task.title,
-        minutes: task.minutes
-      };
-    }
-    return t;
-  });
-
-  await saveDayOverride(ov, "editTaskInline");
-  return { taskId, title: task.title, minutes: task.minutes };
-}
-
-export default editTaskInline;
 -----8<-----
 ===FILE_END===
 
@@ -184,451 +44,62 @@ export default editTaskInline;
 PATH: js/usecases/editTaskInSchedule.js
 -----8<-----
 import { loadSchedule, saveSchedule } from "../data/repo.js";
+import { Schedule } from "../domain/entities.js";
 
 /**
  * editTaskInSchedule
  *
- * Меняем задачу в недельном расписании (экран "Расписание недели").
- * Это влияет на будущее, но не переписывает прошедшие override-дни.
+ * Сценарий: пользователь редактирует задачу в расписании недели.
  *
- * Аргументы:
- *  - weekday: "monday"
- *  - taskId: "math1"
- *  - patch: {
- *      title?: string,
- *      minutes?: number,
- *      offloadDays?: string[]
- *    }
+ * Что меняется:
+ *  - название
+ *  - минуты
+ *  - список offloadDays (разгрузочных дней)
+ *
+ * Всё это делается через метод Schedule.withEditedTask(...)
  */
-export async function editTaskInSchedule({ weekday, taskId, patch }) {
-  const sched = await loadSchedule();
+export default async function editTaskInSchedule({ weekdayKey, taskId, patch }) {
+  // 1. Загружаем текущее расписание
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
 
-  let dayArr = Array.isArray(sched[weekday]) ? sched[weekday] : [];
-  dayArr = dayArr.map(task => {
-    if (String(task.id) !== String(taskId)) return task;
+  // 2. Получаем обновлённое расписание с изменённой задачей
+  const updatedSchedule = schedule.withEditedTask(weekdayKey, taskId, patch);
 
-    const updated = { ...task };
+  // 3. Сохраняем обратно
+  await saveSchedule(updatedSchedule.toJSON(), "editTaskInSchedule");
 
-    if (patch.title !== undefined) {
-      updated.title = String(patch.title || "").trim() || "Без названия";
-    }
-
-    if (patch.minutes !== undefined) {
-      let mins = Number(patch.minutes) || 0;
-      if (mins < 0) mins = 0;
-      updated.minutes = mins;
-    }
-
-    if (patch.offloadDays !== undefined) {
-      updated.offloadDays = Array.isArray(patch.offloadDays)
-        ? [...patch.offloadDays]
-        : [];
-    }
-
-    return updated;
-  });
-
-  sched[weekday] = dayArr;
-  await saveSchedule(sched, "editTaskInSchedule");
-  return true;
-}
-
-export default editTaskInSchedule;
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/ensureTaskInOverrideForDate.js
------8<-----
-import {
-  loadDayOverride,
-  saveDayOverride,
-  loadSchedule
-} from "../data/repo.js";
-
-/**
- * ensureTaskInOverrideForDate
- *
- * Цель:
- *  - Гарантировать, что override (снимок задач) для конкретной даты существует в памяти (ov)
- *  - Гарантировать, что в этом override есть задача с нужным taskId
- *
- * Очень важно понять:
- *  - Эта функция не просто "читает". Она готовит override к редактированию.
- *  - Она МОЖЕТ создать новый override в памяти (ov),
- *    но она НЕ сохраняет его сразу в хранилище.
- *    Сохранение делает вызывающий usecase после фактического изменения.
- *
- * Поведение:
- *  1. Если override уже есть → ок.
- *  2. Если override нет → создаём новый объект ov на основе расписания
- *     (берём задачи "на завтра" как основу), со сброшенными donePercent=0.
- *  3. Если в ov нет задачи с таким taskId →
- *     - ищем её в расписании недели
- *     - копируем и добавляем
- *  4. Возвращаем { ov, task } (task — это ссылка на задачу внутри ov),
- *     чтобы вызывающий код мог менять её и потом вызвать saveDayOverride().
- *
- * Это вызывается, например, в:
- *  - adjustTaskPercentForDate
- *  - toggleTaskDoneForDate
- *  - editTaskInline
- */
-export default async function ensureTaskInOverrideForDate(dateKey, taskId) {
-  // Загружаем override этой даты, если есть.
-  let ov = await loadDayOverride(dateKey);
-
-  // Функция-помощник: получаем weekday строки вида "YYYY-MM-DD"
-  function weekdayKeyFromDateKey(dk) {
-    const [y, m, d] = String(dk).split("-");
-    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
-    const map = [
-      "sunday",    // 0
-      "monday",    // 1
-      "tuesday",   // 2
-      "wednesday", // 3
-      "thursday",  // 4
-      "friday",    // 5
-      "saturday"   // 6
-    ];
-    return map[dateObj.getDay()] || "monday";
-  }
-
-  function addDaysToDateKey(dk, n) {
-    const [y, m, d] = String(dk).split("-");
-    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
-    dateObj.setDate(dateObj.getDate() + Number(n || 0));
-    const yy = dateObj.getFullYear();
-    const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
-    const dd = String(dateObj.getDate()).padStart(2, "0");
-    return `${yy}-${mm}-${dd}`;
-  }
-
-  // Если override ещё нет — создаём базу "с нуля" из расписания.
-  if (!ov) {
-    const sched = await loadSchedule();
-
-    // Базовая логика:
-    // для дня dateKey берём задачи "на завтра".
-    const tomorrowKey = addDaysToDateKey(dateKey, 1);
-    const wdTomorrow = weekdayKeyFromDateKey(tomorrowKey);
-
-    const baseArr = Array.isArray(sched[wdTomorrow]) ? sched[wdTomorrow] : [];
-
-    ov = {
-      dateKey,
-      tasks: baseArr.map(t => ({
-        id: String(t.id || ""),
-        title: String(t.title || "Без названия"),
-        minutes: Number(t.minutes) || 0,
-        donePercent: 0,
-        done: false,
-        meta: t.meta || null
-        // offloadDays в override не храним
-      })),
-      meta: {
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        userAction: "ensureTaskInOverrideForDate:init",
-        deviceId: null
-      }
-    };
-  }
-
-  // Проверяем, есть ли уже задача с taskId
-  let task = ov.tasks.find(t => String(t.id) === String(taskId));
-
-  if (!task) {
-    // не нашли — надо поискать в расписании недели и добавить
-    const sched = await loadSchedule();
-
-    // Перебираем все дни расписания недели в поисках задачи
-    outer: {
-      for (const weekdayKey of Object.keys(sched || {})) {
-        const dayTasks = Array.isArray(sched[weekdayKey])
-          ? sched[weekdayKey]
-          : [];
-        for (const t of dayTasks) {
-          if (String(t.id) === String(taskId)) {
-            // нашли задачу в расписании → клонируем в override
-            const newTask = {
-              id: String(t.id || ""),
-              title: String(t.title || "Без названия"),
-              minutes: Number(t.minutes) || 0,
-              donePercent: 0,
-              done: false,
-              meta: t.meta || null
-            };
-            ov.tasks.push(newTask);
-            task = newTask;
-            break outer;
-          }
-        }
-      }
-    }
-  }
-
-  // Простая страховка: если всё равно нет task — создадим заглушку
-  if (!task) {
-    const fallbackTask = {
-      id: String(taskId),
-      title: "Задача",
-      minutes: 0,
-      donePercent: 0,
-      done: false,
-      meta: null
-    };
-    ov.tasks.push(fallbackTask);
-    task = fallbackTask;
-  }
-
-  // Мы НЕ сохраняем ov здесь.
-  // Сохранение делает вызывающий код, когда он реально меняет задачу.
-  //
-  // Это важно, чтобы простое ОТКРЫТИЕ дня не засоряло хранилище.
-  ov.meta = {
-    ...ov.meta,
-    updatedAt: new Date().toISOString()
-  };
-
-  return { ov, task };
+  return updatedSchedule;
 }
 -----8<-----
 ===FILE_END===
 
 
 ===FILE_START===
-PATH: js/usecases/forceCreateOverrideFromSchedule.js
+PATH: js/usecases/deleteTaskFromSchedule.js
 -----8<-----
-import {
-  loadDayOverride,
-  loadSchedule,
-  saveDayOverride
-} from "../data/repo.js";
+import { loadSchedule, saveSchedule } from "../data/repo.js";
+import { Schedule } from "../domain/entities.js";
 
 /**
- * forceCreateOverrideFromSchedule
+ * deleteTaskFromSchedule
  *
- * Это "жёсткий" сценарий.
- * Он нужен, когда пользователь САМ попросил пересобрать день,
- * например нажал "Сбросить день" в дашборде.
- *
- * Что делает:
- *  1. Строит override (снимок задач на день) С НУЛЯ, основываясь на расписании ("на завтра").
- *  2. Сразу сохраняет его в Storage (localStorage или Telegram CloudStorage).
- *
- * Чем отличается от ensureTaskInOverrideForDate:
- *  - ensureTaskInOverrideForDate НЕ сохраняет автоматически, и создаёт override
- *    только для редактирования конкретной задачи.
- *
- * ВАЖНО:
- * Эта функция не должна вызываться просто при просмотре дня.
- * Её можно вызывать только по явному действию пользователя.
- */
-export default async function forceCreateOverrideFromSchedule(dateKey) {
-  // Если override уже есть — просто вернём его.
-  let ov = await loadDayOverride(dateKey);
-  if (ov && Array.isArray(ov.tasks)) {
-    return ov;
-  }
-
-  // хелперы
-  function weekdayKeyFromDateKey(dk) {
-    const [y, m, d] = String(dk).split("-");
-    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
-    const map = [
-      "sunday",    // 0
-      "monday",    // 1
-      "tuesday",   // 2
-      "wednesday", // 3
-      "thursday",  // 4
-      "friday",    // 5
-      "saturday"   // 6
-    ];
-    return map[dateObj.getDay()] || "monday";
-  }
-
-  function addDaysToDateKey(dk, n) {
-    const [y, m, d] = String(dk).split("-");
-    const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
-    dateObj.setDate(dateObj.getDate() + Number(n || 0));
-    const yy = dateObj.getFullYear();
-    const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
-    const dd = String(dateObj.getDate()).padStart(2, "0");
-    return `${yy}-${mm}-${dd}`;
-  }
-
-  const sched = await loadSchedule();
-
-  // "на завтра"
-  const tomorrowKey = addDaysToDateKey(dateKey, 1);
-  const wdTomorrow = weekdayKeyFromDateKey(tomorrowKey);
-  const baseArr = Array.isArray(sched[wdTomorrow]) ? sched[wdTomorrow] : [];
-
-  ov = {
-    dateKey,
-    tasks: baseArr.map(t => ({
-      id: String(t.id || ""),
-      title: String(t.title || "Без названия"),
-      minutes: Number(t.minutes) || 0,
-      donePercent: 0,
-      done: false,
-      meta: t.meta || null
-    })),
-    meta: {
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userAction: "forceCreateOverrideFromSchedule",
-      deviceId: null
-    }
-  };
-
-  await saveDayOverride(ov, "forceCreateOverrideFromSchedule");
-  return ov;
-}
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/resetToSchedule.js
------8<-----
-import forceCreateOverrideFromSchedule from "./forceCreateOverrideFromSchedule.js";
-
-/**
- * resetToSchedule
- *
- * Сценарий кнопки "Сбросить день" на дашборде.
- *
- * Что делаем:
- *  - Жёстко пересоздаём override для dateKey на основе расписания ("на завтра"),
- *    с обнулёнными прогрессами.
- *  - Сразу сохраняем.
- *
- * Это ИМЕННО та ситуация, когда мы разрешаем насильно перезаписать override.
- * То есть здесь "создать override" — ок, потому что это явное действие пользователя.
- */
-export default async function resetToSchedule({ dateKey }) {
-  const ov = await forceCreateOverrideFromSchedule(dateKey);
-  return ov;
-}
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/toggleTaskDoneForDate.js
------8<-----
-import ensureTaskInOverrideForDate from "./ensureTaskInOverrideForDate.js";
-import { saveDayOverride } from "../data/repo.js";
-
-/**
- * toggleTaskDoneForDate
- *
- * Меняет состояние чекбокса "сделано" у конкретной задачи в конкретную дату.
+ * Сценарий: пользователь удаляет задачу из расписания недели.
  *
  * Логика:
- * - если задача <100% → ставим 100% и done=true
- * - если задача уже 100% → сбрасываем в 0% и done=false
- *
- * Это работает ТОЛЬКО на override дня:
- * мы не трогаем недельное расписание.
+ *  1. Загружаем расписание
+ *  2. Вызываем Schedule.withTaskRemoved(weekdayKey, taskId)
+ *  3. Сохраняем обратно
  */
-export default async function toggleTaskDoneForDate({ dateKey, taskId }) {
-  const { ov, task } = await ensureTaskInOverrideForDate(dateKey, taskId);
+export default async function deleteTaskFromSchedule({ weekdayKey, taskId }) {
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
 
-  const wasDone = task.donePercent >= 100;
-  const newPct = wasDone ? 0 : 100;
+  const updatedSchedule = schedule.withTaskRemoved(weekdayKey, taskId);
 
-  task.donePercent = newPct;
-  task.done = newPct >= 100;
+  await saveSchedule(updatedSchedule.toJSON(), "deleteTaskFromSchedule");
 
-  ov.tasks = ov.tasks.map(t => {
-    if (String(t.id) === String(taskId)) {
-      return {
-        ...t,
-        donePercent: task.donePercent,
-        done: task.done
-      };
-    }
-    return t;
-  });
-
-  ov.meta = {
-    ...ov.meta,
-    updatedAt: new Date().toISOString(),
-    userAction: "toggleTaskDoneForDate"
-  };
-
-  await saveDayOverride(ov, "toggleTaskDoneForDate");
-  return { taskId, donePercent: task.donePercent, done: task.done };
-}
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/gcOldDates.js
------8<-----
-/**
- * gcOldDates
- *
- * Заглушка на будущее.
- * Идея: чистить очень старые override-даты,
- * чтобы не раздувать хранилище.
- *
- * Пока что не вызывается из UI.
- */
-export default async function gcOldDates() {
-  // TODO: пройтись по Storage.getKeys(),
-  // найти planner.override.YYYY-MM-DD.v1,
-  // удалить очень старые.
-  return;
-}
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/setupSyncTriggers.js
------8<-----
-/**
- * setupSyncTriggers
- *
- * Заглушка. План:
- * - тут в будущем можно повесить слушатели,
- *   которые при изменениях в override вызывают syncNow().
- *
- * Пока не используется.
- */
-export default function setupSyncTriggers() {
-  // TODO in future: вызвать syncNow() при изменениях
-  return;
-}
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/syncNow.js
------8<-----
-/**
- * syncNow
- *
- * Заглушка под будущую синхронизацию в облако Telegram.
- *
- * Сейчас Storage уже умеет писать либо в localStorage,
- * либо в Telegram.WebApp.CloudStorage (когда доступно).
- *
- * В будущем тут можно будет сделать:
- *  - собрать изменения локально,
- *  - отправить в облако,
- *  - обработать конфликты.
- */
-export default async function syncNow() {
-  // TODO: реализовать реальную синхронизацию между устройствами
-  return;
+  return updatedSchedule;
 }
 -----8<-----
 ===FILE_END===

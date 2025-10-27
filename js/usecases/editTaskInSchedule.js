@@ -1,51 +1,28 @@
 import { loadSchedule, saveSchedule } from "../data/repo.js";
+import { Schedule } from "../domain/entities.js";
 
 /**
  * editTaskInSchedule
  *
- * Меняем задачу в недельном расписании (экран "Расписание недели").
- * Это влияет на будущее, но не переписывает прошедшие override-дни.
+ * Сценарий: пользователь редактирует задачу в расписании недели.
  *
- * Аргументы:
- *  - weekday: "monday"
- *  - taskId: "math1"
- *  - patch: {
- *      title?: string,
- *      minutes?: number,
- *      offloadDays?: string[]
- *    }
+ * Что меняется:
+ *  - название
+ *  - минуты
+ *  - список offloadDays (разгрузочных дней)
+ *
+ * Всё это делается через метод Schedule.withEditedTask(...)
  */
-export async function editTaskInSchedule({ weekday, taskId, patch }) {
-  const sched = await loadSchedule();
+export default async function editTaskInSchedule({ weekdayKey, taskId, patch }) {
+  // 1. Загружаем текущее расписание
+  const rawSchedule = await loadSchedule();
+  const schedule = Schedule.fromJSON(rawSchedule);
 
-  let dayArr = Array.isArray(sched[weekday]) ? sched[weekday] : [];
-  dayArr = dayArr.map(task => {
-    if (String(task.id) !== String(taskId)) return task;
+  // 2. Получаем обновлённое расписание с изменённой задачей
+  const updatedSchedule = schedule.withEditedTask(weekdayKey, taskId, patch);
 
-    const updated = { ...task };
+  // 3. Сохраняем обратно
+  await saveSchedule(updatedSchedule.toJSON(), "editTaskInSchedule");
 
-    if (patch.title !== undefined) {
-      updated.title = String(patch.title || "").trim() || "Без названия";
-    }
-
-    if (patch.minutes !== undefined) {
-      let mins = Number(patch.minutes) || 0;
-      if (mins < 0) mins = 0;
-      updated.minutes = mins;
-    }
-
-    if (patch.offloadDays !== undefined) {
-      updated.offloadDays = Array.isArray(patch.offloadDays)
-        ? [...patch.offloadDays]
-        : [];
-    }
-
-    return updated;
-  });
-
-  sched[weekday] = dayArr;
-  await saveSchedule(sched, "editTaskInSchedule");
-  return true;
+  return updatedSchedule;
 }
-
-export default editTaskInSchedule;
