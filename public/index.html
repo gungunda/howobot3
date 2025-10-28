@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Telegram CloudStorage Test</title>
 
-  <!-- Критично: загрузка SDK Telegram -->
+  <!-- официальный SDK Telegram -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <style>
@@ -137,10 +137,10 @@
     (function () {
       const KEY = "test_text";
 
-      const formEl = document.getElementById("data-form");
+      const formEl  = document.getElementById("data-form");
       const inputEl = document.getElementById("text-input");
-      const outputEl = document.getElementById("output-block");
-      const diagEl   = document.getElementById("diag-block");
+      const outputEl= document.getElementById("output-block");
+      const diagEl  = document.getElementById("diag-block");
 
       function setOutput(text) {
         outputEl.textContent = text;
@@ -155,72 +155,97 @@
       }
 
       function getEnvInfo() {
+        const wa = window.Telegram && window.Telegram.WebApp;
         const info = {};
-        info.hasTelegram      = !!window.Telegram;
-        info.keysTelegram     = info.hasTelegram ? Object.keys(window.Telegram) : null;
-        info.hasWebApp        = !!(window.Telegram && window.Telegram.WebApp);
-        info.webAppKeys       = info.hasWebApp ? Object.keys(window.Telegram.WebApp) : null;
-
-        if (info.hasWebApp) {
-          info.platform     = window.Telegram.WebApp.platform;
-          info.version      = window.Telegram.WebApp.version;
-          info.initData     = window.Telegram.WebApp.initData || null;
-          info.initDataUnsafe = window.Telegram.WebApp.initDataUnsafe || null;
+        info.hasTelegram  = !!window.Telegram;
+        info.hasWebApp    = !!wa;
+        if (wa) {
+          info.version     = wa.version;
+          info.platform    = wa.platform;
+          info.webAppKeys  = Object.keys(wa);
+          info.hasInvoke   = typeof wa.invokeCustomMethod === "function";
+          info.hasCloud    = "CloudStorage" in wa;
         }
         return info;
       }
 
-      function loadFromCloud() {
+      // обёртка для set
+      function cloudSetItem(key, value, cb) {
         const wa = window.Telegram && window.Telegram.WebApp;
         if (!wa) {
-          setOutput("❌ Telegram WebApp API так и не появился. Похоже, страница открыта не как Mini App или клиент слишком старый.");
+          cb({ ok:false, error:"no WebApp env" });
           return;
         }
-        if (!wa.cloudStorage || !wa.cloudStorage.getItem) {
-          setOutput("❌ WebApp есть, но cloudStorage.getItem отсутствует. Возможно, эта функция не поддерживается в этой версии Telegram/WebApp.");
+        if (typeof wa.invokeCustomMethod !== "function") {
+          cb({ ok:false, error:"no invokeCustomMethod in this client" });
           return;
         }
 
-        wa.cloudStorage.getItem(KEY, function (err, value) {
-          if (err) {
-            setOutput("❌ Ошибка при чтении: " + err);
+        wa.invokeCustomMethod(
+          "cloud_storage_set_item",
+          { key, value },
+          function (res) {
+            // ожидаем res.ok / res.error
+            cb(res);
+          }
+        );
+      }
+
+      // обёртка для get
+      function cloudGetItem(key, cb) {
+        const wa = window.Telegram && window.Telegram.WebApp;
+        if (!wa) {
+          cb({ ok:false, error:"no WebApp env" });
+          return;
+        }
+        if (typeof wa.invokeCustomMethod !== "function") {
+          cb({ ok:false, error:"no invokeCustomMethod in this client" });
+          return;
+        }
+
+        wa.invokeCustomMethod(
+          "cloud_storage_get_item",
+          { key },
+          function (res) {
+            // ожидаем res.ok, res.value или res.error
+            cb(res);
+          }
+        );
+      }
+
+      // прочитать и показать текущее значение
+      function loadFromCloud() {
+        cloudGetItem(KEY, function(res){
+          if (!res || !res.ok) {
+            setOutput("❌ Ошибка при чтении: " + (res && res.error ? res.error : "unknown"));
             return;
           }
-          if (value === undefined || value === null) {
+          if (res.value === undefined || res.value === null) {
             setOutput("ℹ️ В CloudStorage по ключу \"" + KEY + "\" пока ничего нет.");
           } else {
-            setOutput("✅ Прочитано из облака:\n" + value);
+            setOutput("✅ Прочитано из облака:\n" + res.value);
           }
         });
       }
 
+      // сохранить и сразу перечитать
       function saveToCloud(newValue) {
-        const wa = window.Telegram && window.Telegram.WebApp;
-        if (!wa) {
-          setOutput("❌ Нет Telegram.WebApp -> не могу записать.");
-          return;
-        }
-        if (!wa.cloudStorage || !wa.cloudStorage.setItem) {
-          setOutput("❌ Нет cloudStorage.setItem в этом окружении.");
-          return;
-        }
-
-        wa.cloudStorage.setItem(KEY, newValue, function (err) {
-          if (err) {
-            setOutput("❌ Ошибка при записи: " + err);
+        cloudSetItem(KEY, newValue, function(resSet){
+          if (!resSet || !resSet.ok) {
+            setOutput("❌ Ошибка при записи: " + (resSet && resSet.error ? resSet.error : "unknown"));
             return;
           }
-
-          wa.cloudStorage.getItem(KEY, function (err2, valueBack) {
-            if (err2) {
-              setOutput("❌ Ошибка при повторном чтении: " + err2);
+          cloudGetItem(KEY, function(resGet){
+            if (!resGet || !resGet.ok) {
+              setOutput("❌ Ошибка при повторном чтении: " + (resGet && resGet.error ? resGet.error : "unknown"));
               return;
             }
-            setOutput("✅ Успешно сохранено и перечитано:\n" + valueBack);
+            setOutput("✅ Успешно сохранено и перечитано:\n" + resGet.value);
           });
         });
       }
 
+      // обработка формы
       formEl.addEventListener("submit", function (evt) {
         evt.preventDefault();
         const text = inputEl.value.trim();
@@ -233,24 +258,25 @@
         inputEl.focus();
       });
 
-      // инициализация
+      // инициализация Telegram WebApp UI (расширить, и т.д.)
       (function initTelegram() {
+        const wa = window.Telegram && window.Telegram.WebApp;
         try {
-          if (window.Telegram && window.Telegram.WebApp) {
-            window.Telegram.WebApp.ready();
-            if (typeof window.Telegram.WebApp.expand === "function") {
-              window.Telegram.WebApp.expand();
+          if (wa) {
+            wa.ready();
+            if (typeof wa.expand === "function") {
+              wa.expand();
             }
           }
         } catch (err) {
-          setOutput("❌ Ошибка инициализации WebApp.ready(): " + err);
+          setOutput("❌ Ошибка WebApp.ready(): " + err);
         }
       })();
 
-      // показать диагностику окружения сразу
+      // показать диагностику окружения
       setDiag(getEnvInfo());
 
-      // попробовать прочитать данные
+      // попытаться загрузить существующее значение
       loadFromCloud();
     })();
   </script>
