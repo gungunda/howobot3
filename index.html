@@ -5,6 +5,25 @@
   <title>Лёшин планировщик</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="stylesheet" href="./assets/styles.css" />
+  <style>
+    /* Отладочная панель */
+    .debug-shell {
+      background: #000;
+      border-top: 1px solid #333;
+      padding: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #0f0;
+    }
+    .debug-log {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+    }
+  </style>
 </head>
 <body>
 <div id="app" class="app">
@@ -107,6 +126,11 @@
       </div>
     </section>
   </main>
+
+  <!-- Панель логов -->
+  <section class="debug-shell">
+    <pre id="debug-log" class="debug-log"></pre>
+  </section>
 
   <footer class="muted small footer">
     Лёшин планировщик · локальный режим

@@ -22,6 +22,15 @@ const WEEK_ORDER = [
   ["sunday", "Воскресенье"]
 ];
 
+// Возвращает предыдущий день недели (для дедлайна)
+function prevWeekday(dayKey) {
+  const order = WEEK_ORDER.map(d => d[0]);
+  const idx = order.indexOf(dayKey);
+  if (idx === -1) return dayKey;
+  const prevIdx = (idx - 1 + order.length) % order.length;
+  return order[prevIdx];
+}
+
 function escapeHtml(s) {
   return String(s || "")
     .replace(/&/g, "&amp;")
@@ -33,8 +42,8 @@ function escapeHtml(s) {
  * Рендер чекбоксов "разгружать заранее".
  *
  * Бизнес-правило:
- *   День, для которого мы редактируем задачу (mainWeekday),
- *   НЕ должен быть доступен как день разгрузки.
+ *   День, предшествующий дню задачи (prevWeekday(mainWeekday)),
+ *   — это дедлайн. Его нельзя выбирать как день разгрузки.
  *   => этот чекбокс делаем disabled.
  *
  * offloadDaysArr: массив выбранных дней ["monday","wednesday",...]
@@ -42,6 +51,7 @@ function escapeHtml(s) {
  */
 function renderOffloadCheckboxes(mainWeekday, offloadDaysArr) {
   const chosen = new Set(offloadDaysArr || []);
+  const deadlineDay = prevWeekday(mainWeekday); // <-- исправлено
 
   let out = `
     <div class="week-offload-group">
@@ -53,8 +63,8 @@ function renderOffloadCheckboxes(mainWeekday, offloadDaysArr) {
     const shortLabel = WEEKDAY_LABEL[wdKey] || wdLabelLong || wdKey;
     const checked = chosen.has(wdKey) ? "checked" : "";
 
-    // запрещаем выбирать "разгружать в сам день задачи"
-    const disabled = (wdKey === mainWeekday) ? "disabled" : "";
+    // запрещаем выбирать день дедлайна
+    const disabled = (wdKey === deadlineDay) ? "disabled" : "";
     const dimClass = disabled ? "muted" : "";
 
     out += `
@@ -81,26 +91,12 @@ function renderOffloadCheckboxes(mainWeekday, offloadDaysArr) {
 
 /**
  * Просмотр одной задачи (не редактируемой).
- * Вёрстка в виде карточки:
- *   <div class="task-item">
- *     <div class="task-mainline">
- *       <span class="task-title">Математика</span>
- *       <span class="task-mins">30 мин</span>
- *     </div>
- *     <div class="task-meta">Разгрузка: Пн, Ср</div>
- *     <div class="task-actions">
- *       <button class="week-edit">✎</button>
- *       <button class="week-del">🗑</button>
- *     </div>
- *   </div>
  */
 function renderTaskViewRow(task) {
   const mins = Number(task.minutes) || 0;
 
   const offloadInfo = Array.isArray(task.offloadDays) && task.offloadDays.length
-    ? task.offloadDays
-        .map(d => WEEKDAY_LABEL[d] || d)
-        .join(", ")
+    ? task.offloadDays.map(d => WEEKDAY_LABEL[d] || d).join(", ")
     : "—";
 
   return `
@@ -130,21 +126,8 @@ function renderTaskViewRow(task) {
 
 /**
  * Редактор задачи (для существующей или новой).
- *
- * Требования от events.js:
- *  - Корневой элемент:
- *      <div class="task-item editing" data-task-id="...">
- *  - Поля ввода:
- *      input.week-edit-title
- *      input.week-edit-minutes
- *  - Кнопки:
- *      .week-save
- *      .week-cancel
- *  - Чекбоксы разгрузки:
- *      input.week-offload-checkbox (value="monday" и т.д.)
  */
 function renderTaskEditRow(mainWeekday, editState, isNew) {
-  // editState: { weekday, taskId, title, minutes, offloadDays }
   const titleVal   = editState.title || "";
   const minutesVal = editState.minutes != null ? editState.minutes : 30;
   const offloadArr = Array.isArray(editState.offloadDays)
@@ -190,20 +173,7 @@ function renderTaskEditRow(mainWeekday, editState, isNew) {
 }
 
 /**
- * Карточка дня недели:
- *
- * <section class="week-day card" data-weekday="monday">
- *   <h2 class="week-day-title">Понедельник</h2>
- *   <div class="week-day-tasks">...</div>
- *   <div class="week-add-wrap">
- *     <button class="week-add">+ Добавить задачу</button>
- *   </div>
- * </section>
- *
- * Она умеет:
- *  - показать обычные задачи;
- *  - вставить редактор существующей задачи state.scheduleEdit;
- *  - вставить редактор новой задачи (taskId === null).
+ * Карточка дня недели
  */
 function renderDayBlock(weekdayKey, weekdayLabel, tasks, scheduleEdit) {
   let html = `
@@ -212,7 +182,7 @@ function renderDayBlock(weekdayKey, weekdayLabel, tasks, scheduleEdit) {
       <div class="week-day-tasks">
   `;
 
-  // Новый таск для этого дня (создаём)
+  // Новый таск
   if (
     scheduleEdit &&
     scheduleEdit.weekday === weekdayKey &&
@@ -224,11 +194,7 @@ function renderDayBlock(weekdayKey, weekdayLabel, tasks, scheduleEdit) {
       minutes: scheduleEdit.minutes != null ? scheduleEdit.minutes : 30,
       offloadDays: scheduleEdit.offloadDays || []
     };
-    html += renderTaskEditRow(
-      weekdayKey,
-      { ...draftTask, taskId: draftTask.taskId },
-      true
-    );
+    html += renderTaskEditRow(weekdayKey, { ...draftTask, taskId: draftTask.taskId }, true);
   }
 
   // Существующие задачи
@@ -254,11 +220,7 @@ function renderDayBlock(weekdayKey, weekdayLabel, tasks, scheduleEdit) {
               : []
       };
 
-      html += renderTaskEditRow(
-        weekdayKey,
-        currentTaskData,
-        false
-      );
+      html += renderTaskEditRow(weekdayKey, currentTaskData, false);
     } else {
       html += renderTaskViewRow(t);
     }
@@ -277,12 +239,6 @@ function renderDayBlock(weekdayKey, weekdayLabel, tasks, scheduleEdit) {
 
 /**
  * Главная функция для вкладки "Расписание".
- * Это то, что вызывает refreshScheduleEditor(state) из events.js.
- *
- * Важно:
- *  - интерфейс остаётся тем же (updateScheduleView(state)),
- *    чтобы не ломать events.js;
- *  - но при этом вёрстка соответствует аккуратной карточной сетке недели.
  */
 export async function updateScheduleView(state) {
   const rootScheduleView = document.querySelector('[data-view="schedule"]');
@@ -291,12 +247,9 @@ export async function updateScheduleView(state) {
     return;
   }
 
-  // грузим текущее расписание
   const sched = await repo.loadSchedule();
-
   const editingInfo = state && state.scheduleEdit ? state.scheduleEdit : null;
 
-  // Верхняя панель расписания
   let html = `
     <div class="week-header">
       <button class="back-btn" data-action="back-to-dashboard">← Назад</button>
@@ -309,7 +262,6 @@ export async function updateScheduleView(state) {
     <div class="week-columns" data-week>
   `;
 
-  // Карточки по всем дням
   for (const [wdKey, wdLabel] of WEEK_ORDER) {
     const dayTasks = Array.isArray(sched[wdKey]) ? sched[wdKey] : [];
     html += renderDayBlock(wdKey, wdLabel, dayTasks, editingInfo);

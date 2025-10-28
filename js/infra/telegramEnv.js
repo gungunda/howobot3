@@ -1,14 +1,3 @@
-/**
- * js/infra/telegramEnv.js
- * 
- * Слой доступа к хранилищу данных.
- * Работает либо через Telegram.WebApp.CloudStorage (если реально поддерживается),
- * либо через localStorage браузера.
- * 
- * Экспортируется объект Storage с методами:
- *   init(), getMode(), getItem(), setItem(), removeItems(), getKeys(), isTelegramEnv()
- */
-
 const tg = (function getTelegramWebApp() {
   if (typeof window !== "undefined" && window.Telegram && window.Telegram.WebApp) {
     return window.Telegram.WebApp;
@@ -16,17 +5,14 @@ const tg = (function getTelegramWebApp() {
   return null;
 })();
 
-// Обёртка с таймаутом (чтобы не зависнуть на неотвечающем API Телеграма)
 function withTimeout(promise, ms = 5000) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error("Telegram CloudStorage timeout")), ms);
-    promise
-      .then(v => { clearTimeout(t); resolve(v); })
-      .catch(e => { clearTimeout(t); reject(e); });
+    promise.then(v => { clearTimeout(t); resolve(v); })
+           .catch(e => { clearTimeout(t); reject(e); });
   });
 }
 
-// --- Cloud adapter -----------------------------------------------------------
 const Cloud = (() => {
   const supported =
     !!(tg &&
@@ -34,9 +20,7 @@ const Cloud = (() => {
        typeof tg.CloudStorage.getItem === "function" &&
        typeof tg.CloudStorage.setItem === "function");
 
-  if (!supported) {
-    return { supported: false };
-  }
+  if (!supported) return { supported: false };
 
   function getItem(key) {
     return withTimeout(new Promise((resolve, reject) => {
@@ -77,30 +61,24 @@ const Cloud = (() => {
   return { supported: true, getItem, setItem, removeItems, getKeys };
 })();
 
-// --- Storage service ---------------------------------------------------------
 export const Storage = (() => {
   let mode = Cloud.supported ? "cloud_probe" : "local";
 
-  // Проверка версии Telegram WebApp (если доступно)
   function telegramVersion() {
-    try {
-      const ver = tg?.version ?? "0.0";
-      return parseFloat(ver);
-    } catch (_) {
-      return 0;
-    }
+    try { return parseFloat(tg?.version ?? "0.0"); } catch (_) { return 0; }
   }
 
   async function probeCloud() {
-    const probeKey = "__probe__";
-    const probeVal = String(Date.now());
+    const k = "__probe__";
+    const v = String(Date.now());
     try {
-      const okSet = await Cloud.setItem(probeKey, probeVal);
-      const back  = await Cloud.getItem(probeKey);
-      await Cloud.removeItems([probeKey]).catch(() => {});
-      return okSet && back === probeVal;
+      const okSet = await Cloud.setItem(k, v);
+      const back  = await Cloud.getItem(k);
+      await Cloud.removeItems([k]).catch(() => {});
+      return okSet && back === v;
     } catch (err) {
       console.warn("[Storage] probeCloud failed:", err);
+      if (window.debugLog) window.debugLog("[Storage] probeCloud failed", String(err));
       return false;
     }
   }
@@ -108,13 +86,8 @@ export const Storage = (() => {
   async function init() {
     const ver = telegramVersion();
     const isInTelegram = !!tg;
+    if (isInTelegram) { try { tg.expand(); } catch(_) {} }
 
-    // Раскрываем WebApp (не влияет на режим)
-    if (isInTelegram) {
-      try { tg.expand(); } catch(_) {}
-    }
-
-    // Проверяем доступность CloudStorage по версии
     if (Cloud.supported && ver >= 6.2) {
       try {
         const ok = await probeCloud();
@@ -124,32 +97,39 @@ export const Storage = (() => {
         mode = "local";
       }
     } else if (Cloud.supported && ver < 6.2) {
-      console.warn("[Storage.init] Telegram version", ver, "< 6.2 — CloudStorage not supported, fallback to local.");
+      console.warn("[Storage.init] Telegram version", ver, "< 6.2, fallback local.");
       mode = "local";
     } else {
       mode = "local";
     }
 
-    console.log(`[Storage.init] Telegram detected = ${isInTelegram}, version = ${ver}, mode = ${mode}`);
+    console.log(`[Storage.init] Telegram detected=${isInTelegram}, version=${ver}, mode=${mode}`);
+    if (window.debugLog)
+      window.debugLog("[Storage.init]", "tg=", isInTelegram, "ver=", ver, "mode=", mode);
   }
 
   function getMode() { return mode; }
-
   function isTelegramEnv() { return !!tg; }
 
   async function getItem(key) {
     if (mode === "cloud" && Cloud.supported) {
       try {
-        return await Cloud.getItem(key);
+        const v = await Cloud.getItem(key);
+        if (window.debugLog) window.debugLog("[Storage.getItem]", key, "from CLOUD =", v);
+        return v;
       } catch (e) {
-        console.warn("[Storage.getItem] Cloud failed → fallback to local:", e);
+        console.warn("[Storage.getItem] Cloud failed → local:", e);
+        if (window.debugLog) window.debugLog("[Storage.getItem]", key, "cloud FAIL → local");
         mode = "local";
       }
     }
     try {
-      return localStorage.getItem(key);
+      const v = localStorage.getItem(key);
+      if (window.debugLog) window.debugLog("[Storage.getItem]", key, "from LOCAL =", v);
+      return v;
     } catch (err) {
       console.warn("[Storage.getItem] localStorage failed:", err);
+      if (window.debugLog) window.debugLog("[Storage.getItem]", key, "LOCAL FAIL", String(err));
       return null;
     }
   }
@@ -161,20 +141,25 @@ export const Storage = (() => {
         const ok = await Cloud.setItem(key, value);
         if (ok) {
           console.log("[Storage.setItem] saved to CLOUD ok");
+          if (window.debugLog) window.debugLog("[Storage.setItem]", key, "→ CLOUD ok");
           return;
         }
-        console.warn("[Storage.setItem] cloud returned !ok, switching to local");
+        console.warn("[Storage.setItem] cloud returned !ok, fallback local");
+        if (window.debugLog) window.debugLog("[Storage.setItem]", key, "cloud !ok → local");
         mode = "local";
       } catch (e) {
-        console.warn("[Storage.setItem] Cloud failed → fallback to local:", e);
+        console.warn("[Storage.setItem] Cloud failed → local:", e);
+        if (window.debugLog) window.debugLog("[Storage.setItem]", key, "EXC → local");
         mode = "local";
       }
     }
     try {
       localStorage.setItem(key, value);
       console.log("[Storage.setItem] saved to LOCAL ok");
+      if (window.debugLog) window.debugLog("[Storage.setItem]", key, "→ LOCAL ok");
     } catch (err) {
       console.error("[Storage.setItem] localStorage FAILED:", err);
+      if (window.debugLog) window.debugLog("[Storage.setItem]", key, "LOCAL FAIL", String(err));
     }
   }
 
@@ -184,9 +169,11 @@ export const Storage = (() => {
       try {
         await Cloud.removeItems(keysArray);
         console.log("[Storage.removeItems] cloud ok", keysArray);
+        if (window.debugLog) window.debugLog("[Storage.removeItems]", keysArray.join(","), "CLOUD ok");
         return;
       } catch (e) {
-        console.warn("[Storage.removeItems] Cloud failed → fallback to local:", e);
+        console.warn("[Storage.removeItems] Cloud failed → local:", e);
+        if (window.debugLog) window.debugLog("[Storage.removeItems]", "CLOUD FAIL → local");
         mode = "local";
       }
     }
@@ -194,8 +181,10 @@ export const Storage = (() => {
       try {
         localStorage.removeItem(k);
         console.log("[Storage.removeItems] local ok", k);
+        if (window.debugLog) window.debugLog("[Storage.removeItems]", k, "LOCAL ok");
       } catch (err) {
         console.error("[Storage.removeItems] local remove FAILED:", err, k);
+        if (window.debugLog) window.debugLog("[Storage.removeItems]", k, "LOCAL FAIL", String(err));
       }
     }
   }
@@ -205,9 +194,11 @@ export const Storage = (() => {
       try {
         const arr = await Cloud.getKeys();
         console.log("[Storage.getKeys] cloud keys =", arr);
+        if (window.debugLog) window.debugLog("[Storage.getKeys]", "CLOUD =", arr);
         return arr;
       } catch (e) {
-        console.warn("[Storage.getKeys] Cloud failed → fallback to local:", e);
+        console.warn("[Storage.getKeys] Cloud failed → local:", e);
+        if (window.debugLog) window.debugLog("[Storage.getKeys]", "CLOUD FAIL → local");
         mode = "local";
       }
     }
@@ -221,6 +212,7 @@ export const Storage = (() => {
       console.warn("[Storage.getKeys] localStorage iteration failed:", err);
     }
     console.log("[Storage.getKeys] local keys =", out);
+    if (window.debugLog) window.debugLog("[Storage.getKeys]", "LOCAL =", out);
     return out;
   }
 
