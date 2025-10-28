@@ -2,262 +2,142 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Telegram CloudStorage Test</title>
+  <title>Лёшин планировщик</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="./assets/styles.css" />
   <style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f5f5f5;
-      color: #222;
-      margin: 0;
-      padding: 1.5rem;
+    /* Отладочная панель */
+    .debug-shell {
+      background: #000;
+      border-top: 1px solid #333;
+      padding: 6px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 11px;
       line-height: 1.4;
+      color: #0f0;
     }
-
-    .app-container {
-      max-width: 480px;
-      margin: 0 auto;
-      background: #fff;
-      border-radius: 12px;
-      padding: 1rem 1.25rem 1.5rem;
-      box-shadow: 0 12px 24px rgba(0,0,0,0.07);
-      border: 1px solid rgba(0,0,0,0.05);
-    }
-
-    h1 {
-      font-size: 1.1rem;
-      margin: 0 0 .5rem;
-      font-weight: 600;
-      color: #111;
-    }
-
-    .desc {
-      font-size: .9rem;
-      color: #555;
-      margin-bottom: 1rem;
-    }
-
-    form {
-      display: flex;
-      flex-direction: column;
-      gap: .75rem;
-      margin-bottom: 1rem;
-    }
-
-    label {
-      font-size: .8rem;
-      font-weight: 500;
-      color: #333;
-    }
-
-    input[type="text"] {
-      width: 100%;
-      font-size: 1rem;
-      padding: .6rem .75rem;
-      border-radius: 8px;
-      border: 1px solid #bbb;
-      box-sizing: border-box;
-      outline: none;
-    }
-
-    input[type="text"]:focus {
-      border-color: #4a90e2;
-      box-shadow: 0 0 0 3px rgba(74,144,226,0.25);
-    }
-
-    button {
-      font-size: 1rem;
-      font-weight: 600;
-      padding: .7rem .9rem;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      background: #4a90e2;
-      color: white;
-      line-height: 1.2;
-    }
-
-    button:active {
-      transform: scale(.99);
-    }
-
-    .output-block {
-      background: #fafafa;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: .75rem .9rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: .9rem;
-      min-height: 3.5em;
+    .debug-log {
       white-space: pre-wrap;
       word-break: break-word;
-      color: #222;
-    }
-
-    .hint {
-      font-size: .75rem;
-      color: #888;
-      margin-top: .5rem;
+      margin: 0;
     }
   </style>
 </head>
 <body>
-  <div class="app-container">
-    <h1>CloudStorage тест</h1>
-    <p class="desc">
-      Введи текст и нажми "Сохранить". Значение уйдёт в Telegram Cloud Storage,
-      затем мы сразу считаем его обратно по тому же ключу и покажем ниже.
-    </p>
+<div id="app" class="app">
 
-    <form id="data-form">
-      <div>
-        <label for="text-input">Текст для сохранения</label>
-        <input id="text-input" name="text-input" type="text" placeholder="что-нибудь осмысленное 🙃" />
-      </div>
+  <!-- Хедер с навигацией и выбором даты -->
+  <header class="topbar card section">
+    <nav class="topbar-nav">
+      <button data-nav="dashboard" id="nav-dashboard" type="button">Сегодня</button>
+      <button data-nav="schedule"  id="nav-schedule"  type="button">Расписание</button>
+      <button data-nav="calendar"  id="nav-calendar"  type="button">Календарь</button>
+    </nav>
 
-      <button id="save-btn" type="submit">Сохранить</button>
-    </form>
-
-    <div class="output-block" id="output-block">Инициализация…</div>
-    <div class="hint">
-      Ключ хранения: "test_text"<br/>
-      Если будет ошибка — она появится здесь же.
+    <div class="topbar-date">
+      <input data-date-input id="date-input" type="date" />
+      <button data-action="today" id="today-btn" type="button">Сегодня</button>
     </div>
-  </div>
+  </header>
 
-  <script>
-    (function () {
-      const KEY = "test_text";
+  <main class="main">
+    <!-- === DASHBOARD (ДЕНЬ) === -->
+    <section class="view" data-view="dashboard">
+      <div class="section card dashboard" data-dashboard-root data-date-key="">
+        <div class="schedule-header">
+          <div class="schedule-title" data-day-label>Домашняя работа</div>
+          <div class="schedule-actions">
+            <button data-action="open-schedule-editor" type="button">Редактировать расписание</button>
+            <button class="dash-reset-day" data-action="reset-day" type="button">Сбросить день</button>
+          </div>
+        </div>
 
-      const formEl = document.getElementById("data-form");
-      const inputEl = document.getElementById("text-input");
-      const outputEl = document.getElementById("output-block");
+        <!-- Блок статов по дню -->
+        <div class="stats-row">
+          <div class="stat-box card">
+            <div class="stat-label small muted">Запланировано</div>
+            <div class="stat-value" data-stat="planned">–</div>
+          </div>
+          <div class="stat-box card">
+            <div class="stat-label small muted">Сделано</div>
+            <div class="stat-value" data-stat="done">–</div>
+          </div>
+          <div class="stat-box card">
+            <div class="stat-label small muted">Осталось</div>
+            <div class="stat-value" data-stat="left">–</div>
+          </div>
+          <div class="stat-box card">
+            <div class="stat-label small muted">ETA</div>
+            <div class="stat-value" data-stat="eta">–</div>
+          </div>
+        </div>
 
-      function setOutput(text) {
-        outputEl.textContent = text;
-      }
+        <!-- Основные задачи дня -->
+        <div class="task-list" data-tasks></div>
+        <div class="muted" data-empty style="display:none">Нет задач</div>
 
-      // аккуратно получаем WebApp и cloudStorage
-      function getWebApp() {
-        return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
-      }
+        <!-- Разгрузка -->
+        <div class="offload-section" data-offload-wrapper style="margin-top:24px;display:none;">
+          <div class="offload-title small muted" style="margin-bottom:8px;">Разгрузка</div>
+          <div class="task-list offload-list" data-offload></div>
+        </div>
+      </div>
+    </section>
 
-      function getCloud() {
-        const wa = getWebApp();
-        if (!wa) return null;
-        return wa.cloudStorage || null;
-      }
+    <!-- === НЕДЕЛЯ / РАСПИСАНИЕ === -->
+    <section class="view" data-view="schedule">
+      <div class="section card">
+        <div class="section-head section-head-inline">
+          <h2 class="section-title">Расписание недели</h2>
+          <button class="back-btn" data-action="back-to-dashboard" type="button">Назад к дню</button>
+        </div>
 
-      // читаем текущее значение из стораджа
-      function loadFromCloud() {
-        const wa = getWebApp();
-        if (!wa) {
-          setOutput("❌ Telegram WebApp API не найден (ещё не готов или клиент не Mini App).");
-          return;
-        }
+        <div class="week-grid" data-week></div>
 
-        const cloud = getCloud();
-        if (!cloud) {
-          setOutput("❌ WebApp есть, но cloudStorage не поддерживается в этом клиенте Telegram.");
-          return;
-        }
+        <p class="muted small hint-text">
+          Нажми «+», чтобы добавить предмет. ✎ — редактировать. 🗑 — удалить.<br/>
+          В режиме редактирования можно выбрать дни разгрузки.
+        </p>
+      </div>
+    </section>
 
-        cloud.getItem(KEY, function (err, value) {
-          if (err) {
-            setOutput("❌ Ошибка при чтении: " + err);
-            return;
-          }
-          if (value === undefined || value === null || value === "") {
-            setOutput("ℹ️ В CloudStorage по ключу \"" + KEY + "\" пока ничего нет.");
-          } else {
-            setOutput("✅ Прочитано из облака:\n" + value);
-          }
-        });
-      }
+    <!-- === КАЛЕНДАРЬ === -->
+    <section class="view" data-view="calendar">
+      <div class="section card">
+        <div class="section-head section-head-inline">
+          <div class="cal-head-left">
+            <button class="cal-nav" data-cal-prev type="button">←</button>
+            <div class="cal-label" data-cal-label>Месяц Год</div>
+            <button class="cal-nav" data-cal-next type="button">→</button>
+          </div>
 
-      // сохраняем новое значение, потом читаем обратно
-      function saveToCloud(newValue) {
-        const wa = getWebApp();
-        if (!wa) {
-          setOutput("❌ Telegram WebApp API не найден. (WebApp отсутствует)");
-          return;
-        }
+          <button class="back-btn" data-action="back-to-dashboard-2" type="button">Назад к дню</button>
+        </div>
 
-        const cloud = getCloud();
-        if (!cloud) {
-          setOutput("❌ WebApp найден, но cloudStorage не поддерживается в этом клиенте.");
-          return;
-        }
+        <div class="calendar-wrapper">
+          <div class="calendar-grid" data-cal-grid></div>
+        </div>
 
-        cloud.setItem(KEY, newValue, function (err, isStored) {
-          if (err) {
-            setOutput("❌ Ошибка при записи: " + err);
-            return;
-          }
+        <p class="muted small hint-text">
+          Кликни на число, чтобы выбрать дату. ← → листают месяцы.
+        </p>
+      </div>
+    </section>
+  </main>
 
-          cloud.getItem(KEY, function (err2, valueBack) {
-            if (err2) {
-              setOutput("❌ Ошибка при повторном чтении: " + err2);
-              return;
-            }
+  <!-- Панель логов -->
+  <section class="debug-shell">
+    <pre id="debug-log" class="debug-log"></pre>
+  </section>
 
-            setOutput("✅ Успешно сохранено и перечитано:\n" + valueBack);
-          });
-        });
-      }
+  <footer class="muted small footer">
+    Лёшин планировщик · локальный режим
+  </footer>
+</div>
 
-      // обработчик отправки формы
-      formEl.addEventListener("submit", function (evt) {
-        evt.preventDefault();
-
-        const text = inputEl.value.trim();
-        if (!text) {
-          setOutput("⚠️ Пустое значение. Введи текст перед сохранением.");
-          return;
-        }
-
-        saveToCloud(text);
-
-        // готовим форму к следующему вводу
-        inputEl.value = "";
-        inputEl.focus();
-      });
-
-      // Ждём появления Telegram.WebApp (потому что иногда оно прилетает не моментально)
-      function waitForTelegramAndInit(attempt = 0) {
-        const wa = getWebApp();
-
-        if (wa) {
-          // инициализация WebApp
-          try {
-            wa.ready && wa.ready();
-            if (typeof wa.expand === "function") {
-              wa.expand();
-            }
-          } catch (err) {
-            setOutput("❌ Ошибка инициализации WebApp: " + err);
-          }
-
-          // после инициализации — читаем текущее значение
-          loadFromCloud();
-          return;
-        }
-
-        if (attempt >= 10) {
-          // спустя 10 попыток (~1 сек) так и не появилось
-          setOutput("❌ Telegram WebApp API так и не появился. Похоже, страница открыта не как Mini App или клиент слишком старый.");
-          return;
-        }
-
-        // пробуем ещё через 100мс
-        setTimeout(function () {
-          waitForTelegramAndInit(attempt + 1);
-        }, 100);
-      }
-
-      // стартуем
-      waitForTelegramAndInit();
-    })();
-  </script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script type="module" src="./js/app.js"></script>
 </body>
 </html>

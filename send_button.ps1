@@ -1,17 +1,17 @@
 # === Настройки ===
 $token   = "8224160873:AAHRX9hzH_6Kj4OMuVdbpB8aVja-B5Z_OZE"   # ← твой Bot API токен
 $chat_id = "617105920"                                        # ← твой chat_id (число без кавычек тоже можно)
-$url     = "https://gungunda.github.io/howobot3/"             # ← адрес твоего мини-аппа
+$url     = "https://howobot.vercel.app/"             # ← адрес твоего мини-аппа
 
 # === Формируем тело JSON ===
 $body = @{
     chat_id = $chat_id
-    text    = "Тест Mini App"
+    text    = "Test Mini App"
     reply_markup = @{
         inline_keyboard = @(
             ,(@(
                 @{
-                    text = "Открыть Mini App"
+                    text = "Open Mini App"
                     web_app = @{ url = $url }
                 }
             ))

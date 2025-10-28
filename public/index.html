@@ -2,102 +2,107 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Telegram CloudStorage Test</title>
+
+  <!-- Критично: загрузка SDK Telegram -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
   <style>
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #f5f5f5;
-      color: #222;
-      margin: 0;
-      padding: 1.5rem;
-      line-height: 1.4;
+      font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      background:#f5f5f5;
+      color:#222;
+      margin:0;
+      padding:1.5rem;
+      line-height:1.4;
     }
-
     .app-container {
-      max-width: 480px;
-      margin: 0 auto;
-      background: #fff;
-      border-radius: 12px;
-      padding: 1rem 1.25rem 1.5rem;
-      box-shadow: 0 12px 24px rgba(0,0,0,0.07);
-      border: 1px solid rgba(0,0,0,0.05);
+      max-width:480px;
+      margin:0 auto;
+      background:#fff;
+      border-radius:12px;
+      padding:1rem 1.25rem 1.5rem;
+      box-shadow:0 12px 24px rgba(0,0,0,0.07);
+      border:1px solid rgba(0,0,0,0.05);
     }
-
     h1 {
-      font-size: 1.1rem;
-      margin: 0 0 .5rem;
-      font-weight: 600;
-      color: #111;
+      font-size:1.1rem;
+      margin:0 0 .5rem;
+      font-weight:600;
+      color:#111;
     }
-
     .desc {
-      font-size: .9rem;
-      color: #555;
-      margin-bottom: 1rem;
+      font-size:.9rem;
+      color:#555;
+      margin-bottom:1rem;
     }
-
     form {
-      display: flex;
-      flex-direction: column;
-      gap: .75rem;
-      margin-bottom: 1rem;
+      display:flex;
+      flex-direction:column;
+      gap:.75rem;
+      margin-bottom:1rem;
     }
-
     label {
-      font-size: .8rem;
-      font-weight: 500;
-      color: #333;
+      font-size:.8rem;
+      font-weight:500;
+      color:#333;
     }
-
     input[type="text"] {
-      width: 100%;
-      font-size: 1rem;
-      padding: .6rem .75rem;
-      border-radius: 8px;
-      border: 1px solid #bbb;
-      box-sizing: border-box;
-      outline: none;
+      width:100%;
+      font-size:1rem;
+      padding:.6rem .75rem;
+      border-radius:8px;
+      border:1px solid #bbb;
+      box-sizing:border-box;
+      outline:none;
     }
-
     input[type="text"]:focus {
-      border-color: #4a90e2;
-      box-shadow: 0 0 0 3px rgba(74,144,226,0.25);
+      border-color:#4a90e2;
+      box-shadow:0 0 0 3px rgba(74,144,226,0.25);
     }
-
     button {
-      font-size: 1rem;
-      font-weight: 600;
-      padding: .7rem .9rem;
-      border-radius: 8px;
-      border: none;
-      cursor: pointer;
-      background: #4a90e2;
-      color: white;
-      line-height: 1.2;
+      font-size:1rem;
+      font-weight:600;
+      padding:.7rem .9rem;
+      border-radius:8px;
+      border:none;
+      cursor:pointer;
+      background:#4a90e2;
+      color:white;
+      line-height:1.2;
     }
-
     button:active {
-      transform: scale(.99);
+      transform:scale(.99);
     }
-
     .output-block {
-      background: #fafafa;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: .75rem .9rem;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: .9rem;
-      min-height: 3.5em;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: #222;
+      background:#fafafa;
+      border:1px solid #ddd;
+      border-radius:8px;
+      padding:.75rem .9rem;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      font-size:.9rem;
+      min-height:3.5em;
+      white-space:pre-wrap;
+      word-break:break-word;
+      color:#222;
+      margin-bottom:0.5rem;
     }
-
+    .diag-block {
+      background:#fffdf5;
+      border:1px solid #e0d9a8;
+      border-radius:8px;
+      padding:.75rem .9rem;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      font-size:.75rem;
+      white-space:pre-wrap;
+      word-break:break-word;
+      color:#4a4a00;
+    }
     .hint {
-      font-size: .75rem;
-      color: #888;
-      margin-top: .5rem;
+      font-size:.75rem;
+      color:#888;
+      margin-top:.5rem;
     }
   </style>
 </head>
@@ -106,7 +111,7 @@
     <h1>CloudStorage тест</h1>
     <p class="desc">
       Введи текст и нажми "Сохранить". Значение уйдёт в Telegram Cloud Storage,
-      затем мы сразу считаем его обратно по тому же ключу и покажем ниже.
+      затем мы считаем его обратно по тому же ключу и покажем ниже.
     </p>
 
     <form id="data-form">
@@ -118,7 +123,10 @@
       <button id="save-btn" type="submit">Сохранить</button>
     </form>
 
-    <div class="output-block" id="output-block">Инициализация…</div>
+    <div class="output-block" id="output-block">—</div>
+
+    <div class="diag-block" id="diag-block">diag...</div>
+
     <div class="hint">
       Ключ хранения: "test_text"<br/>
       Если будет ошибка — она появится здесь же.
@@ -132,42 +140,53 @@
       const formEl = document.getElementById("data-form");
       const inputEl = document.getElementById("text-input");
       const outputEl = document.getElementById("output-block");
+      const diagEl   = document.getElementById("diag-block");
 
       function setOutput(text) {
         outputEl.textContent = text;
       }
 
-      // аккуратно получаем WebApp и cloudStorage
-      function getWebApp() {
-        return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+      function setDiag(obj) {
+        try {
+          diagEl.textContent = JSON.stringify(obj, null, 2);
+        } catch(e) {
+          diagEl.textContent = String(obj);
+        }
       }
 
-      function getCloud() {
-        const wa = getWebApp();
-        if (!wa) return null;
-        return wa.cloudStorage || null;
+      function getEnvInfo() {
+        const info = {};
+        info.hasTelegram      = !!window.Telegram;
+        info.keysTelegram     = info.hasTelegram ? Object.keys(window.Telegram) : null;
+        info.hasWebApp        = !!(window.Telegram && window.Telegram.WebApp);
+        info.webAppKeys       = info.hasWebApp ? Object.keys(window.Telegram.WebApp) : null;
+
+        if (info.hasWebApp) {
+          info.platform     = window.Telegram.WebApp.platform;
+          info.version      = window.Telegram.WebApp.version;
+          info.initData     = window.Telegram.WebApp.initData || null;
+          info.initDataUnsafe = window.Telegram.WebApp.initDataUnsafe || null;
+        }
+        return info;
       }
 
-      // читаем текущее значение из стораджа
       function loadFromCloud() {
-        const wa = getWebApp();
+        const wa = window.Telegram && window.Telegram.WebApp;
         if (!wa) {
-          setOutput("❌ Telegram WebApp API не найден (ещё не готов или клиент не Mini App).");
+          setOutput("❌ Telegram WebApp API так и не появился. Похоже, страница открыта не как Mini App или клиент слишком старый.");
+          return;
+        }
+        if (!wa.cloudStorage || !wa.cloudStorage.getItem) {
+          setOutput("❌ WebApp есть, но cloudStorage.getItem отсутствует. Возможно, эта функция не поддерживается в этой версии Telegram/WebApp.");
           return;
         }
 
-        const cloud = getCloud();
-        if (!cloud) {
-          setOutput("❌ WebApp есть, но cloudStorage не поддерживается в этом клиенте Telegram.");
-          return;
-        }
-
-        cloud.getItem(KEY, function (err, value) {
+        wa.cloudStorage.getItem(KEY, function (err, value) {
           if (err) {
             setOutput("❌ Ошибка при чтении: " + err);
             return;
           }
-          if (value === undefined || value === null || value === "") {
+          if (value === undefined || value === null) {
             setOutput("ℹ️ В CloudStorage по ключу \"" + KEY + "\" пока ничего нет.");
           } else {
             setOutput("✅ Прочитано из облака:\n" + value);
@@ -175,88 +194,64 @@
         });
       }
 
-      // сохраняем новое значение, потом читаем обратно
       function saveToCloud(newValue) {
-        const wa = getWebApp();
+        const wa = window.Telegram && window.Telegram.WebApp;
         if (!wa) {
-          setOutput("❌ Telegram WebApp API не найден. (WebApp отсутствует)");
+          setOutput("❌ Нет Telegram.WebApp -> не могу записать.");
+          return;
+        }
+        if (!wa.cloudStorage || !wa.cloudStorage.setItem) {
+          setOutput("❌ Нет cloudStorage.setItem в этом окружении.");
           return;
         }
 
-        const cloud = getCloud();
-        if (!cloud) {
-          setOutput("❌ WebApp найден, но cloudStorage не поддерживается в этом клиенте.");
-          return;
-        }
-
-        cloud.setItem(KEY, newValue, function (err, isStored) {
+        wa.cloudStorage.setItem(KEY, newValue, function (err) {
           if (err) {
             setOutput("❌ Ошибка при записи: " + err);
             return;
           }
 
-          cloud.getItem(KEY, function (err2, valueBack) {
+          wa.cloudStorage.getItem(KEY, function (err2, valueBack) {
             if (err2) {
               setOutput("❌ Ошибка при повторном чтении: " + err2);
               return;
             }
-
             setOutput("✅ Успешно сохранено и перечитано:\n" + valueBack);
           });
         });
       }
 
-      // обработчик отправки формы
       formEl.addEventListener("submit", function (evt) {
         evt.preventDefault();
-
         const text = inputEl.value.trim();
         if (!text) {
           setOutput("⚠️ Пустое значение. Введи текст перед сохранением.");
           return;
         }
-
         saveToCloud(text);
-
-        // готовим форму к следующему вводу
         inputEl.value = "";
         inputEl.focus();
       });
 
-      // Ждём появления Telegram.WebApp (потому что иногда оно прилетает не моментально)
-      function waitForTelegramAndInit(attempt = 0) {
-        const wa = getWebApp();
-
-        if (wa) {
-          // инициализация WebApp
-          try {
-            wa.ready && wa.ready();
-            if (typeof wa.expand === "function") {
-              wa.expand();
+      // инициализация
+      (function initTelegram() {
+        try {
+          if (window.Telegram && window.Telegram.WebApp) {
+            window.Telegram.WebApp.ready();
+            if (typeof window.Telegram.WebApp.expand === "function") {
+              window.Telegram.WebApp.expand();
             }
-          } catch (err) {
-            setOutput("❌ Ошибка инициализации WebApp: " + err);
           }
-
-          // после инициализации — читаем текущее значение
-          loadFromCloud();
-          return;
+        } catch (err) {
+          setOutput("❌ Ошибка инициализации WebApp.ready(): " + err);
         }
+      })();
 
-        if (attempt >= 10) {
-          // спустя 10 попыток (~1 сек) так и не появилось
-          setOutput("❌ Telegram WebApp API так и не появился. Похоже, страница открыта не как Mini App или клиент слишком старый.");
-          return;
-        }
+      // показать диагностику окружения сразу
+      setDiag(getEnvInfo());
 
-        // пробуем ещё через 100мс
-        setTimeout(function () {
-          waitForTelegramAndInit(attempt + 1);
-        }, 100);
-      }
-
-      // стартуем
-      waitForTelegramAndInit();
+      // попробовать прочитать данные
+      loadFromCloud();
     })();
   </script>
 </body>
