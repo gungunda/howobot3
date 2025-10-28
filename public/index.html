@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>Telegram CloudStorage Test</title>
+  <title>Telegram CloudStorage Debug</title>
 
-  <!-- официальный SDK Telegram -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 
   <style>
@@ -108,10 +107,9 @@
 </head>
 <body>
   <div class="app-container">
-    <h1>CloudStorage тест</h1>
+    <h1>CloudStorage debug</h1>
     <p class="desc">
-      Введи текст и нажми "Сохранить". Значение уйдёт в Telegram Cloud Storage,
-      затем мы считаем его обратно по тому же ключу и покажем ниже.
+      Тест записи/чтения через invokeCustomMethod. Мы выведем сырые ответы API.
     </p>
 
     <form id="data-form">
@@ -119,7 +117,6 @@
         <label for="text-input">Текст для сохранения</label>
         <input id="text-input" name="text-input" type="text" placeholder="что-нибудь осмысленное 🙃" />
       </div>
-
       <button id="save-btn" type="submit">Сохранить</button>
     </form>
 
@@ -129,155 +126,167 @@
 
     <div class="hint">
       Ключ хранения: "test_text"<br/>
-      Если будет ошибка — она появится здесь же.
+      Мы сейчас в режиме отладки. Сырые ответы покажутся выше.
     </div>
   </div>
 
   <script>
-    (function () {
+    (function(){
       const KEY = "test_text";
+      const formEl   = document.getElementById("data-form");
+      const inputEl  = document.getElementById("text-input");
+      const outputEl = document.getElementById("output-block");
+      const diagEl   = document.getElementById("diag-block");
 
-      const formEl  = document.getElementById("data-form");
-      const inputEl = document.getElementById("text-input");
-      const outputEl= document.getElementById("output-block");
-      const diagEl  = document.getElementById("diag-block");
-
-      function setOutput(text) {
+      function showOutput(text) {
         outputEl.textContent = text;
       }
+      function showDiag(obj,label) {
+        const prev = diagEl.textContent.trim();
+        let dump;
+        try { dump = JSON.stringify(obj,null,2); }
+        catch(e){ dump = String(obj); }
+        const line = (label?("["+label+"] "):"") + dump;
+        diagEl.textContent = prev ? (prev + "\n\n" + line) : line;
+      }
 
-      function setDiag(obj) {
+      function envInfo() {
+        const wa = window.Telegram && window.Telegram.WebApp;
+        return {
+          hasTelegram: !!window.Telegram,
+          hasWebApp: !!wa,
+          platform: wa ? wa.platform : null,
+          version: wa ? wa.version : null,
+          hasInvoke: wa ? typeof wa.invokeCustomMethod === "function" : null,
+          hasCloudProp: wa ? ("CloudStorage" in wa) : null,
+          webAppKeys: wa ? Object.keys(wa) : null
+        };
+      }
+
+      function invoke(method, params, cb) {
+        const wa = window.Telegram && window.Telegram.WebApp;
+        if (!wa) {
+          cb({error:"no WebApp"});
+          return;
+        }
+        if (typeof wa.invokeCustomMethod !== "function") {
+          cb({error:"no invokeCustomMethod"});
+          return;
+        }
         try {
-          diagEl.textContent = JSON.stringify(obj, null, 2);
+          wa.invokeCustomMethod(method, params, function(res){
+            cb(res);
+          });
         } catch(e) {
-          diagEl.textContent = String(obj);
+          cb({error:"invoke threw " + e});
         }
       }
 
-      function getEnvInfo() {
-        const wa = window.Telegram && window.Telegram.WebApp;
-        const info = {};
-        info.hasTelegram  = !!window.Telegram;
-        info.hasWebApp    = !!wa;
-        if (wa) {
-          info.version     = wa.version;
-          info.platform    = wa.platform;
-          info.webAppKeys  = Object.keys(wa);
-          info.hasInvoke   = typeof wa.invokeCustomMethod === "function";
-          info.hasCloud    = "CloudStorage" in wa;
-        }
-        return info;
-      }
-
-      // обёртка для set
-      function cloudSetItem(key, value, cb) {
-        const wa = window.Telegram && window.Telegram.WebApp;
-        if (!wa) {
-          cb({ ok:false, error:"no WebApp env" });
-          return;
-        }
-        if (typeof wa.invokeCustomMethod !== "function") {
-          cb({ ok:false, error:"no invokeCustomMethod in this client" });
-          return;
-        }
-
-        wa.invokeCustomMethod(
-          "cloud_storage_set_item",
-          { key, value },
-          function (res) {
-            // ожидаем res.ok / res.error
-            cb(res);
-          }
-        );
-      }
-
-      // обёртка для get
-      function cloudGetItem(key, cb) {
-        const wa = window.Telegram && window.Telegram.WebApp;
-        if (!wa) {
-          cb({ ok:false, error:"no WebApp env" });
-          return;
-        }
-        if (typeof wa.invokeCustomMethod !== "function") {
-          cb({ ok:false, error:"no invokeCustomMethod in this client" });
-          return;
-        }
-
-        wa.invokeCustomMethod(
-          "cloud_storage_get_item",
-          { key },
-          function (res) {
-            // ожидаем res.ok, res.value или res.error
-            cb(res);
-          }
-        );
-      }
-
-      // прочитать и показать текущее значение
-      function loadFromCloud() {
-        cloudGetItem(KEY, function(res){
-          if (!res || !res.ok) {
-            setOutput("❌ Ошибка при чтении: " + (res && res.error ? res.error : "unknown"));
-            return;
-          }
-          if (res.value === undefined || res.value === null) {
-            setOutput("ℹ️ В CloudStorage по ключу \"" + KEY + "\" пока ничего нет.");
-          } else {
-            setOutput("✅ Прочитано из облака:\n" + res.value);
-          }
-        });
-      }
-
-      // сохранить и сразу перечитать
-      function saveToCloud(newValue) {
-        cloudSetItem(KEY, newValue, function(resSet){
-          if (!resSet || !resSet.ok) {
-            setOutput("❌ Ошибка при записи: " + (resSet && resSet.error ? resSet.error : "unknown"));
-            return;
-          }
-          cloudGetItem(KEY, function(resGet){
-            if (!resGet || !resGet.ok) {
-              setOutput("❌ Ошибка при повторном чтении: " + (resGet && resGet.error ? resGet.error : "unknown"));
-              return;
-            }
-            setOutput("✅ Успешно сохранено и перечитано:\n" + resGet.value);
+      // попробуем прочитать ключ разными вариантами
+      function tryReadAll() {
+        // вариант 1: snake_case
+        invoke("cloud_storage_get_item", { key: KEY }, function(res1){
+          showDiag(res1,"get_item snake");
+          // вариант 2: camelCase singular
+          invoke("cloud_storage_getItem", { key: KEY }, function(res2){
+            showDiag(res2,"getItem camel");
+            // вариант 3: plural get_items (вдруг нужно keys:[...])
+            invoke("cloud_storage_get_items", { keys:[KEY] }, function(res3){
+              showDiag(res3,"get_items plural");
+              // теперь выберем лучший ответ
+              const best = chooseBestReadResult([res1,res2,res3]);
+              if (best && best.ok) {
+                if (best.value !== undefined && best.value !== null) {
+                  showOutput("✅ Прочитано из облака:\n" + best.value);
+                } else if (best.values && best.values[KEY] !== undefined) {
+                  showOutput("✅ Прочитано из облака:\n" + best.values[KEY]);
+                } else {
+                  showOutput("ℹ️ Ключ есть, но значение пустое/null");
+                }
+              } else {
+                showOutput("❌ Чтение не удалось. См. diag блок выше.");
+              }
+            });
           });
         });
       }
 
-      // обработка формы
-      formEl.addEventListener("submit", function (evt) {
+      function chooseBestReadResult(list) {
+        // эвристика: вернуть первый объект вида {ok:true,...}
+        for (const r of list) {
+          if (r && typeof r === "object" && r.ok) return r;
+        }
+        // иначе null
+        return null;
+      }
+
+      // запись тоже тестируем в разных вариантах
+      function tryWriteThenRead(val) {
+        // пробуем snake_case set_item
+        invoke("cloud_storage_set_item", { key: KEY, value: val }, function(r1){
+          showDiag(r1,"set_item snake");
+
+          if (r1 && r1.ok) {
+            tryReadAll();
+            return;
+          }
+
+          // пробуем camelCase setItem
+          invoke("cloud_storage_setItem", { key: KEY, value: val }, function(r2){
+            showDiag(r2,"setItem camel");
+
+            if (r2 && r2.ok) {
+              tryReadAll();
+              return;
+            }
+
+            // пробуем plural set_items (массив пар)
+            invoke("cloud_storage_set_items", { items: [{key:KEY,value:val}] }, function(r3){
+              showDiag(r3,"set_items plural");
+
+              if (r3 && r3.ok) {
+                tryReadAll();
+                return;
+              }
+
+              // если все три варианта не ок
+              showOutput("❌ Запись не удалась. См. diag блок выше.");
+            });
+          });
+        });
+      }
+
+      // submit формы
+      formEl.addEventListener("submit", function(evt){
         evt.preventDefault();
         const text = inputEl.value.trim();
         if (!text) {
-          setOutput("⚠️ Пустое значение. Введи текст перед сохранением.");
+          showOutput("⚠️ Пустое значение. Введи текст перед сохранением.");
           return;
         }
-        saveToCloud(text);
+        tryWriteThenRead(text);
         inputEl.value = "";
         inputEl.focus();
       });
 
-      // инициализация Telegram WebApp UI (расширить, и т.д.)
-      (function initTelegram() {
+      // init WebApp UI
+      (function initTelegram(){
         const wa = window.Telegram && window.Telegram.WebApp;
         try {
           if (wa) {
             wa.ready();
-            if (typeof wa.expand === "function") {
-              wa.expand();
-            }
+            if (typeof wa.expand === "function") wa.expand();
           }
-        } catch (err) {
-          setOutput("❌ Ошибка WebApp.ready(): " + err);
+        } catch(e){
+          showOutput("❌ WebApp.ready() error: " + e);
         }
       })();
 
-      // показать диагностику окружения
-      setDiag(getEnvInfo());
+      // первичная диагностика окружения
+      showDiag(envInfo(),"env");
 
-      // попытаться загрузить существующее значение
-      loadFromCloud();
+      // сразу читаем текущее значение
+      tryReadAll();
     })();
   </script>
 </body>
