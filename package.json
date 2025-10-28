@@ -1,8 +1,0 @@
-{
-  "name": "tg-auth-vercel",
-  "version": "1.0.0",
-  "description": "Telegram Mini App auth callback verifier",
-  "main": "api/auth.js",
-  "license": "MIT",
-  "dependencies": {}
-}
