@@ -118,7 +118,7 @@
       <button id="save-btn" type="submit">Сохранить</button>
     </form>
 
-    <div class="output-block" id="output-block">—</div>
+    <div class="output-block" id="output-block">Инициализация…</div>
     <div class="hint">
       Ключ хранения: "test_text"<br/>
       Если будет ошибка — она появится здесь же.
@@ -133,32 +133,32 @@
       const inputEl = document.getElementById("text-input");
       const outputEl = document.getElementById("output-block");
 
-      // утилита: безопасно получить cloudStorage API
-      function getCloudAPI() {
-        try {
-          if (
-            window.Telegram &&
-            window.Telegram.WebApp &&
-            window.Telegram.WebApp.cloudStorage
-          ) {
-            return window.Telegram.WebApp.cloudStorage;
-          }
-          return null;
-        } catch (err) {
-          return null;
-        }
-      }
-
-      // выводим что-то пользователю (успех или ошибка)
       function setOutput(text) {
         outputEl.textContent = text;
       }
 
-      // читаем текущее значение из стораджа и показываем
+      // аккуратно получаем WebApp и cloudStorage
+      function getWebApp() {
+        return (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+      }
+
+      function getCloud() {
+        const wa = getWebApp();
+        if (!wa) return null;
+        return wa.cloudStorage || null;
+      }
+
+      // читаем текущее значение из стораджа
       function loadFromCloud() {
-        const cloud = getCloudAPI();
+        const wa = getWebApp();
+        if (!wa) {
+          setOutput("❌ Telegram WebApp API не найден (ещё не готов или клиент не Mini App).");
+          return;
+        }
+
+        const cloud = getCloud();
         if (!cloud) {
-          setOutput("❌ Telegram WebApp API не найден. Открой через Telegram Mini App.");
+          setOutput("❌ WebApp есть, но cloudStorage не поддерживается в этом клиенте Telegram.");
           return;
         }
 
@@ -167,7 +167,7 @@
             setOutput("❌ Ошибка при чтении: " + err);
             return;
           }
-          if (value === undefined || value === null) {
+          if (value === undefined || value === null || value === "") {
             setOutput("ℹ️ В CloudStorage по ключу \"" + KEY + "\" пока ничего нет.");
           } else {
             setOutput("✅ Прочитано из облака:\n" + value);
@@ -175,21 +175,26 @@
         });
       }
 
-      // сохраняем новое значение, потом сразу читаем обратно
+      // сохраняем новое значение, потом читаем обратно
       function saveToCloud(newValue) {
-        const cloud = getCloudAPI();
-        if (!cloud) {
-          setOutput("❌ Telegram WebApp API не найден. Открой через Telegram Mini App.");
+        const wa = getWebApp();
+        if (!wa) {
+          setOutput("❌ Telegram WebApp API не найден. (WebApp отсутствует)");
           return;
         }
 
-        cloud.setItem(KEY, newValue, function (err) {
+        const cloud = getCloud();
+        if (!cloud) {
+          setOutput("❌ WebApp найден, но cloudStorage не поддерживается в этом клиенте.");
+          return;
+        }
+
+        cloud.setItem(KEY, newValue, function (err, isStored) {
           if (err) {
             setOutput("❌ Ошибка при записи: " + err);
             return;
           }
 
-          // запись прошла, теперь читаем назад чтобы подтвердить
           cloud.getItem(KEY, function (err2, valueBack) {
             if (err2) {
               setOutput("❌ Ошибка при повторном чтении: " + err2);
@@ -201,7 +206,7 @@
         });
       }
 
-      // обработчик формы
+      // обработчик отправки формы
       formEl.addEventListener("submit", function (evt) {
         evt.preventDefault();
 
@@ -213,29 +218,45 @@
 
         saveToCloud(text);
 
-        // очистим поле чтобы форма готова была к следующему вводу
+        // готовим форму к следующему вводу
         inputEl.value = "";
         inputEl.focus();
       });
 
-      // Инициализация Telegram WebApp (если есть)
-      (function initTelegram() {
-        if (window.Telegram && window.Telegram.WebApp) {
+      // Ждём появления Telegram.WebApp (потому что иногда оно прилетает не моментально)
+      function waitForTelegramAndInit(attempt = 0) {
+        const wa = getWebApp();
+
+        if (wa) {
+          // инициализация WebApp
           try {
-            window.Telegram.WebApp.ready();
-            // не обязательно, но приятно: занять больше места
-            if (typeof window.Telegram.WebApp.expand === "function") {
-              window.Telegram.WebApp.expand();
+            wa.ready && wa.ready();
+            if (typeof wa.expand === "function") {
+              wa.expand();
             }
           } catch (err) {
-            // даже если ready() кинет ошибку — просто покажем ее
             setOutput("❌ Ошибка инициализации WebApp: " + err);
           }
-        }
-      })();
 
-      // при загрузке страницы сразу пробуем считать текущее значение
-      loadFromCloud();
+          // после инициализации — читаем текущее значение
+          loadFromCloud();
+          return;
+        }
+
+        if (attempt >= 10) {
+          // спустя 10 попыток (~1 сек) так и не появилось
+          setOutput("❌ Telegram WebApp API так и не появился. Похоже, страница открыта не как Mini App или клиент слишком старый.");
+          return;
+        }
+
+        // пробуем ещё через 100мс
+        setTimeout(function () {
+          waitForTelegramAndInit(attempt + 1);
+        }, 100);
+      }
+
+      // стартуем
+      waitForTelegramAndInit();
     })();
   </script>
 </body>
