@@ -1,36 +1,46 @@
+// js/app.js
+//
+// Точка входа приложения.
+// ВАЖНО: порядок инициализации такой:
+// 1. дождаться DOMContentLoaded
+// 2. вызвать await Storage.init()  — настроить режим хранения (local / cloud)
+// 3. ВСТАВЛЕНО: дождаться SyncService.pullBootstrap() — подтянуть свежие данные с сервера (Vercel KV)
+// 4. initUI() из events.js — отрисовать интерфейс на уже актуальных данных
+//
+// Это нужно для синхронизации между устройствами:
+// если ребёнок правил расписание/прогресс на планшете, а сейчас открыл телефон,
+// мы хотим подхватить последние данные ДО того как отрисуем экран.
+
 import { Storage } from "./infra/telegramEnv.js";
-import initUI from "./ui/events.js"; // теперь default import
+import { initUI } from "./ui/events.js";
 
-// Универсальный логгер: вывод в консоль и внизу экрана
-function pushToDebugPane(text) {
-  try {
-    const box = document.getElementById("debug-log");
-    if (!box) return;
-    box.textContent += text + "\n";
-    box.parentElement.scrollTop = box.parentElement.scrollHeight;
-  } catch (_) {}
-}
+// новый импорт для синхронизации с сервером
+import SyncService from "./sync/syncService.js";
 
-function debugLog(...args) {
-  const line = args.map(x => {
-    if (typeof x === "object") {
-      try { return JSON.stringify(x); } catch(_) { return String(x); }
-    }
-    return String(x);
-  }).join(" ");
-  console.log(line);
-  pushToDebugPane(line);
-}
+document.addEventListener("DOMContentLoaded", async () => {
+  console.log("[app] DOM ready");
 
-window.debugLog = debugLog;
-
-// Точка входа
-async function main() {
+  // 1. Инициализация слоя Storage
+  // Это важно: repo.js в дальнейшем читает/пишет через Storage.
   await Storage.init();
-  debugLog("[app] Storage mode =", Storage.getMode && Storage.getMode());
-  initUI();
-}
 
-main().catch(err => {
-  debugLog("[app] fatal init error", err);
+  console.log("[app] Storage mode =", Storage.getMode && Storage.getMode());
+
+  // 2. ПЕРЕД тем как строить UI — тянем актуальные данные с сервера
+  // pullBootstrap():
+  // - спросит /api/list
+  // - сравнит updatedAt с локальными версиями
+  // - подтянет только те override и расписание, которые на сервере свежее
+  // - сохранит их через repo в локальное хранилище
+  //
+  // Важно: если мы не в Telegram.WebApp (обычный браузер) — SyncService сам
+  // пропустит сетевую синхронизацию и просто ничего не сделает.
+  try {
+    await SyncService.pullBootstrap();
+  } catch (e) {
+    console.warn("[app] pullBootstrap failed (continue offline)", e);
+  }
+
+  // 3. Запуск UI-контроллера
+  initUI();
 });
