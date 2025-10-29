@@ -10,55 +10,46 @@
 // 1. импорт SyncService
 // 2. запуск периодической фоновой синхронизации pollUpdates()
 // 3. вспомогательные функции syncAfterDayChange() и syncAfterScheduleChange()
-// 4. ВСТАВКИ вызовов syncAfterDayChange()/syncAfterScheduleChange() прямо
-//    в обработчик кликов document.addEventListener("click", ...)
+// 4. вызовы syncAfterDayChange()/syncAfterScheduleChange() в обработчике кликов
 //
-// Важно:
-// - Логика дедлайна (offload → прогресс пишем в день-дедлайн, а не "сегодня")
-//   уже есть в resolveEffectiveDateForTask(rowEl). Мы её используем для sync.
-// - Мы не меняем бизнес-логику use case'ов. Мы только добавляем синх-вызовы после них.
+// Если что-то визуально "не совпадёт" с твоими data-action,
+// это не критично сразу. Главное сейчас — чтобы модуль загружался без ошибок
+// и чтобы UI снова отрисовывался.
 
 import * as repo from "../data/repo.js";
-import {
-  adjustTaskPercentForDate
-} from "../usecases/adjustTaskPercentForDate.js";
-import {
-  toggleTaskDoneForDate
-} from "../usecases/toggleTaskDoneForDate.js";
+
+// use cases по дням (прогресс, done, inline edit, сброс)
+import { adjustTaskPercentForDate } from "../usecases/adjustTaskPercentForDate.js";
+import { toggleTaskDoneForDate } from "../usecases/toggleTaskDoneForDate.js";
 import {
   startInlineEditTaskForDate,
   applyInlineEditForDate,
   cancelInlineEditForDate
 } from "../usecases/editTaskInline.js";
-import {
-  resetToScheduleForDate
-} from "../usecases/resetToSchedule.js";
+import { resetToScheduleForDate } from "../usecases/resetToSchedule.js";
 
+// use cases расписания недели
+// ВАЖНО: тут мы НЕ импортируем несуществующий scheduleUseCases.js.
+// Вместо этого импортируем реальные файлы, как они у нас лежат.
+import { addTaskToSchedule } from "../usecases/addTaskToSchedule.js";
 import {
-  addTaskToSchedule,
   startEditTaskInSchedule,
   applyEditTaskInSchedule,
-  cancelEditTaskInSchedule,
-  deleteTaskFromSchedule
-} from "../usecases/scheduleUseCases.js"; // <-- ВАЖНО: если у тебя другие имена / файлы
-// (например editTaskInSchedule.js / deleteTaskFromSchedule.js / addTaskToSchedule.js),
-// скорректируй эти импорты под свои реальные файлы. Я здесь сгруппировал для читаемости.
+  cancelEditTaskInSchedule
+} from "../usecases/editTaskInSchedule.js";
+import { deleteTaskFromSchedule } from "../usecases/deleteTaskFromSchedule.js";
 
-// РЕНДЕРЫ
+// рендеры экранов
 import { renderDashboardView } from "./view-dashboard.js";
 import { renderCalendarView } from "./view-calendar.js";
 import { renderScheduleView } from "./view-schedule.js";
 
-// СИНХРОНИЗАЦИЯ
+// сервис синхронизации с облаком
 import SyncService from "../sync/syncService.js";
 
 // ======================
 // ГЛОБАЛЬНОЕ СОСТОЯНИЕ UI
 // ======================
-//
-// state.selectedDateKey — текущий выбранный день в формате YYYY-MM-DD.
-// state.activeView — "dashboard" | "calendar" | "schedule".
-// state.scheduleEdit — временное состояние редактирования расписания.
 
 const state = {
   activeView: "dashboard",
@@ -67,23 +58,9 @@ const state = {
 };
 
 // ======================
-// ВСПОМОГАТЕЛЬНЫЕ ХЕЛПЕРЫ СИНХРОНИЗАЦИИ
+// ХЕЛПЕРЫ СИНХРОНИЗАЦИИ
 // ======================
-//
-// 1. syncAfterDayChange(dateKey)
-//    Вызывается после локального изменения конкретного дня (override).
-//
-//    Типичные случаи:
-//    - +10% / -10% прогресса
-//    - toggle done
-//    - inline-редакт задачи дня
-//    - resetToScheduleForDate()
-//
-//    dateKey — это ключ даты, где реально хранится прогресс.
-//    Для обычной задачи это state.selectedDateKey.
-//    Для задачи из "Разгрузка" — это дедлайн-день (правило D / D+1),
-//    который мы узнаём через resolveEffectiveDateForTask(rowEl).
-//
+
 async function syncAfterDayChange(dateKey) {
   try {
     await SyncService.pushOverride(dateKey);
@@ -92,13 +69,6 @@ async function syncAfterDayChange(dateKey) {
   }
 }
 
-// 2. syncAfterScheduleChange()
-//    Вызывается после локального изменения расписания недели.
-//    Типичные случаи:
-//    - добавили задачу в расписание дня недели
-//    - отредактировали задачу расписания
-//    - удалили задачу из расписания
-//
 async function syncAfterScheduleChange() {
   try {
     await SyncService.pushSchedule();
@@ -108,7 +78,7 @@ async function syncAfterScheduleChange() {
 }
 
 // ======================
-// ОТРИСОВКА ВКЛАДОК
+// РЕНДЕР ФУНКЦИИ
 // ======================
 
 async function refreshDashboard() {
@@ -156,10 +126,9 @@ function switchView(newView) {
 }
 
 // ======================
-// УТИЛИТЫ ДЛЯ ДАТ
+// ВСПОМОГАТЕЛЬНОЕ: КЛЮЧ ДАТЫ
 // ======================
 
-// Форматирует дату "сейчас" в YYYY-MM-DD
 function getTodayKey() {
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -168,36 +137,26 @@ function getTodayKey() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Эта функция у тебя уже должна существовать в проекте,
-// она важна для логики разгрузки: определяет,
-// В КАКОЙ ДАТЕ хранить прогресс конкретной задачи.
-// Если она у тебя в другом месте или с другим именем —
-// нужно использовать именно её версию.
-// Здесь просто каркас, чтобы файл был целостным.
+// ВАЖНО: в твоём реальном коде эта функция уже существует
+// и учитывает offload (задачи из "Разгрузка" пишут прогресс в день-дедлайн).
+// Здесь оставлен fallback, чтобы файл был самодостаточный.
+// Если у тебя уже есть настоящая resolveEffectiveDateForTask(rowEl),
+// нужно оставить твою, а эту заглушку удалить.
 function resolveEffectiveDateForTask(rowEl) {
-  // В реальном коде эта функция должна:
-  // - отличать обычную задачу дня от задачи из "Разгрузка",
-  // - если это обычная задача → вернуть state.selectedDateKey,
-  // - если это задача из "Разгрузка" → вернуть ключ дедлайна (предыдущий день недели).
-  //
-  // Здесь мы ставим fallback на selectedDateKey,
-  // но у тебя в проекте эта логика уже реализована.
   return state.selectedDateKey;
 }
 
 // ======================
-// ИНИЦИАЛИЗАЦИЯ UI
+// initUI
 // ======================
 //
-// initUI вызывается из app.js после:
-//   await Storage.init();
-//   await SyncService.pullBootstrap();
+// initUI вызывается из app.js ПОСЛЕ Storage.init() и ПОСЛЕ SyncService.pullBootstrap().
+// Здесь мы:
+// - выбираем дату по умолчанию,
+// - рендерим,
 //
-// здесь мы:
-// 1. выставляем выбранную дату, если её нет
-// 2. рендерим вкладки
-// 3. вешаем глобальный обработчик кликов
-// 4. запускаем периодическую pollUpdates()
+// ДОПОЛНЕНИЕ: вешаем глобальный обработчик кликов с синком,
+// и запускаем pollUpdates() по таймеру.
 
 async function initUI() {
   if (!state.selectedDateKey) {
@@ -212,182 +171,19 @@ async function initUI() {
 
   switchView(state.activeView);
 
-  // ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ВСЕХ КЛИКОВ
-  //
-  // Внутри мы аккуратно встраиваем вызовы syncAfterDayChange и syncAfterScheduleChange,
-  // сразу после того, как локальные данные уже изменены через use case
-  // и мы обновили UI через refresh*().
-  //
+  // Глобальный обработчик кликов.
+  // Здесь мы подставляем sync-вызовы ПОСЛЕ локальных изменений.
   document.addEventListener("click", async (ev) => {
     const t = ev.target;
 
-    // ----------------------------------------
-    // НАВИГАЦИЯ МЕЖДУ ВКЛАДКАМИ
-    // ----------------------------------------
+    // --- Навигация между вкладками ---
     if (t.matches("[data-nav]")) {
       const newView = t.getAttribute("data-nav");
       switchView(newView);
       return;
     }
 
-    // ----------------------------------------
-    // УПРАВЛЕНИЕ ПРОГРЕССОМ ЗАДАЧ ДНЯ (+10 / -10)
-    // ----------------------------------------
-    if (t.matches("[data-action='progress-plus']") ||
-        t.matches("[data-action='progress-minus']")) {
-
-      // находим строку задачи (row), оттуда узнаём taskId и т.д.
-      const rowEl = t.closest("[data-task-row]");
-      if (!rowEl) return;
-
-      const taskId = rowEl.getAttribute("data-task-id");
-      if (!taskId) return;
-
-      // Определяем, куда писать прогресс (может быть дедлайн-день, а не сегодня)
-      const effectiveDateKey = resolveEffectiveDateForTask(rowEl);
-
-      // шаг изменения: +10 или -10
-      const delta = t.matches("[data-action='progress-plus']") ? +10 : -10;
-
-      // вызываем бизнес-логику
-      await adjustTaskPercentForDate(
-        effectiveDateKey,
-        taskId,
-        delta
-      );
-
-      // перерисовываем дашборд
-      await refreshDashboard();
-
-      // синхронизируем только изменённый день
-      await syncAfterDayChange(effectiveDateKey);
-
-      return;
-    }
-
-    // ----------------------------------------
-    // ТОГГЛ DONE (чекбокс "сделано")
-    // ----------------------------------------
-    if (t.matches("[data-action='toggle-done']")) {
-      const rowEl = t.closest("[data-task-row]");
-      if (!rowEl) return;
-
-      const taskId = rowEl.getAttribute("data-task-id");
-      if (!taskId) return;
-
-      const effectiveDateKey = resolveEffectiveDateForTask(rowEl);
-
-      await toggleTaskDoneForDate(
-        effectiveDateKey,
-        taskId
-      );
-
-      await refreshDashboard();
-
-      await syncAfterDayChange(effectiveDateKey);
-
-      return;
-    }
-
-    // ----------------------------------------
-    // ИНЛАЙН-РЕДАКТИРОВАНИЕ ЗАДАЧИ ДНЯ (✎, сохранить, отмена)
-    // ----------------------------------------
-
-    // начало редактирования задачи дня
-    if (t.matches("[data-action='inline-edit-start']")) {
-      const rowEl = t.closest("[data-task-row]");
-      if (!rowEl) return;
-
-      const taskId = rowEl.getAttribute("data-task-id");
-      if (!taskId) return;
-
-      const effectiveDateKey = resolveEffectiveDateForTask(rowEl);
-
-      await startInlineEditTaskForDate(
-        effectiveDateKey,
-        taskId
-      );
-
-      await refreshDashboard();
-      return;
-    }
-
-    // сохранение изменений инлайн-редактирования
-    if (t.matches("[data-action='inline-edit-apply']")) {
-      const rowEl = t.closest("[data-task-row]");
-      if (!rowEl) return;
-
-      const taskId = rowEl.getAttribute("data-task-id");
-      if (!taskId) return;
-
-      const effectiveDateKey = resolveEffectiveDateForTask(rowEl);
-
-      // поля формы (новое название, новые минуты и т.д.)
-      const titleInput = rowEl.querySelector("[data-edit-title]");
-      const minutesInput = rowEl.querySelector("[data-edit-minutes]");
-
-      const newTitle = titleInput ? titleInput.value.trim() : "";
-      const newMinutes = minutesInput ? parseInt(minutesInput.value, 10) : 0;
-
-      await applyInlineEditForDate(
-        effectiveDateKey,
-        taskId,
-        {
-          title: newTitle,
-          minutes: newMinutes
-        }
-      );
-
-      await refreshDashboard();
-
-      // пушим изменения конкретного дня
-      await syncAfterDayChange(effectiveDateKey);
-
-      return;
-    }
-
-    // отмена инлайн-редактирования
-    if (t.matches("[data-action='inline-edit-cancel']")) {
-      const rowEl = t.closest("[data-task-row]");
-      if (!rowEl) return;
-
-      const taskId = rowEl.getAttribute("data-task-id");
-      if (!taskId) return;
-
-      const effectiveDateKey = resolveEffectiveDateForTask(rowEl);
-
-      await cancelInlineEditForDate(
-        effectiveDateKey,
-        taskId
-      );
-
-      await refreshDashboard();
-      return;
-    }
-
-    // ----------------------------------------
-    // RESET TO SCHEDULE (сбросить день к расписанию)
-    // ----------------------------------------
-    if (t.matches("[data-action='reset-day-to-schedule']")) {
-      // берём дату из state.selectedDateKey — это тот день,
-      // который мы сейчас просматриваем в дашборде
-      const currentDateKey = state.selectedDateKey;
-
-      await resetToScheduleForDate(currentDateKey);
-
-      await refreshDashboard();
-
-      // отправляем новый снимок дня (override обновился)
-      await syncAfterDayChange(currentDateKey);
-
-      return;
-    }
-
-    // ----------------------------------------
-    // ОБНОВЛЕНИЕ ВЫБРАННОЙ ДАТЫ ЧЕРЕЗ КАЛЕНДАРЬ
-    // (клик по дню в календаре должен переключать выбранный день
-    //  и переключать вкладку обратно на dashboard)
-    // ----------------------------------------
+    // --- Клик по дню в календаре ---
     if (t.matches("[data-calendar-day]")) {
       const newDateKey = t.getAttribute("data-calendar-day");
       if (newDateKey) {
@@ -403,17 +199,115 @@ async function initUI() {
       return;
     }
 
-    // ----------------------------------------
-    // РАБОТА С РАСПИСАНИЕМ НЕДЕЛИ (schedule)
-    // ----------------------------------------
+    // --- Прогресс +10 / -10 ---
+    if (
+      t.matches("[data-action='progress-plus']") ||
+      t.matches("[data-action='progress-minus']")
+    ) {
+      const rowEl = t.closest("[data-task-row]");
+      if (!rowEl) return;
+      const taskId = rowEl.getAttribute("data-task-id");
+      if (!taskId) return;
+
+      const effDateKey = resolveEffectiveDateForTask(rowEl);
+      const delta = t.matches("[data-action='progress-plus']") ? +10 : -10;
+
+      await adjustTaskPercentForDate(effDateKey, taskId, delta);
+      await refreshDashboard();
+      await syncAfterDayChange(effDateKey);
+      return;
+    }
+
+    // --- Галочка done ---
+    if (t.matches("[data-action='toggle-done']")) {
+      const rowEl = t.closest("[data-task-row]");
+      if (!rowEl) return;
+      const taskId = rowEl.getAttribute("data-task-id");
+      if (!taskId) return;
+
+      const effDateKey = resolveEffectiveDateForTask(rowEl);
+
+      await toggleTaskDoneForDate(effDateKey, taskId);
+      await refreshDashboard();
+      await syncAfterDayChange(effDateKey);
+      return;
+    }
+
+    // --- Начало инлайн-редактирования задачи дня ---
+    if (t.matches("[data-action='inline-edit-start']")) {
+      const rowEl = t.closest("[data-task-row]");
+      if (!rowEl) return;
+      const taskId = rowEl.getAttribute("data-task-id");
+      if (!taskId) return;
+
+      const effDateKey = resolveEffectiveDateForTask(rowEl);
+
+      await startInlineEditTaskForDate(effDateKey, taskId);
+      await refreshDashboard();
+      // здесь синк не нужен, мы пока только вошли в режим редактирования
+      return;
+    }
+
+    // --- Применить инлайн-редактирование ---
+    if (t.matches("[data-action='inline-edit-apply']")) {
+      const rowEl = t.closest("[data-task-row]");
+      if (!rowEl) return;
+      const taskId = rowEl.getAttribute("data-task-id");
+      if (!taskId) return;
+
+      const effDateKey = resolveEffectiveDateForTask(rowEl);
+
+      const titleInput = rowEl.querySelector("[data-edit-title]");
+      const minutesInput = rowEl.querySelector("[data-edit-minutes]");
+
+      const newTitle = titleInput ? titleInput.value.trim() : "";
+      const newMinutes = minutesInput
+        ? parseInt(minutesInput.value, 10)
+        : 0;
+
+      await applyInlineEditForDate(effDateKey, taskId, {
+        title: newTitle,
+        minutes: newMinutes
+      });
+
+      await refreshDashboard();
+      await syncAfterDayChange(effDateKey);
+      return;
+    }
+
+    // --- Отмена инлайн-редактирования ---
+    if (t.matches("[data-action='inline-edit-cancel']")) {
+      const rowEl = t.closest("[data-task-row]");
+      if (!rowEl) return;
+      const taskId = rowEl.getAttribute("data-task-id");
+      if (!taskId) return;
+
+      const effDateKey = resolveEffectiveDateForTask(rowEl);
+
+      await cancelInlineEditForDate(effDateKey, taskId);
+      await refreshDashboard();
+      return;
+    }
+
+    // --- Reset day to schedule ---
+    if (t.matches("[data-action='reset-day-to-schedule']")) {
+      const currentDateKey = state.selectedDateKey;
+      await resetToScheduleForDate(currentDateKey);
+      await refreshDashboard();
+      await syncAfterDayChange(currentDateKey);
+      return;
+    }
+
+    // --- Редактирование расписания недели ---
     //
-    // Ниже примеры. Твой реальный код может отличаться по атрибутам data-action.
-    // Важно то, что ПОСЛЕ локального изменения расписания мы вызываем
-    //   await syncAfterScheduleChange();
-    //
-    // Пример: начало редактирования задачи расписания
+    // ВАЖНО: дальше идут блоки, которые могут не в точности совпасть
+    // с твоими data-action. Если у тебя другие атрибуты — это не страшно.
+    // Главное: после успешного изменения расписания мы вызываем
+    // syncAfterScheduleChange().
+
+    // начать редактирование задачи расписания
     if (t.matches("[data-action='schedule-edit-start']")) {
-      const dayKey = t.getAttribute("data-day"); // monday / tuesday / ...
+      const dayKey = t.getAttribute("data-day");
       const taskId = t.getAttribute("data-task-id");
 
       await startEditTaskInSchedule(dayKey, taskId);
@@ -423,7 +317,7 @@ async function initUI() {
       return;
     }
 
-    // Пример: сохранить изменения задачи в расписании
+    // применить изменения задачи расписания
     if (t.matches("[data-action='schedule-edit-apply']")) {
       const formEl = t.closest("[data-schedule-edit-row]");
       if (!formEl) return;
@@ -436,9 +330,10 @@ async function initUI() {
       const offloadInputs = formEl.querySelectorAll("[data-edit-offload-day]");
 
       const newTitle = titleInput ? titleInput.value.trim() : "";
-      const newMinutes = minutesInput ? parseInt(minutesInput.value, 10) : 0;
+      const newMinutes = minutesInput
+        ? parseInt(minutesInput.value, 10)
+        : 0;
 
-      // собираем offloadDays
       const offloadDays = [];
       offloadInputs.forEach((chk) => {
         if (chk.checked) {
@@ -454,14 +349,11 @@ async function initUI() {
 
       state.scheduleEdit = await repo.getScheduleEditState();
       await refreshScheduleEditor();
-
-      // пушим новое расписание
       await syncAfterScheduleChange();
-
       return;
     }
 
-    // Пример: отменить редактирование задачи расписания
+    // отменить редактирование задачи расписания
     if (t.matches("[data-action='schedule-edit-cancel']")) {
       const dayKey = t.getAttribute("data-day");
       const taskId = t.getAttribute("data-task-id");
@@ -473,7 +365,7 @@ async function initUI() {
       return;
     }
 
-    // Пример: удалить задачу из расписания
+    // удалить задачу из расписания
     if (t.matches("[data-action='schedule-delete-task']")) {
       const dayKey = t.getAttribute("data-day");
       const taskId = t.getAttribute("data-task-id");
@@ -482,35 +374,24 @@ async function initUI() {
 
       state.scheduleEdit = await repo.getScheduleEditState();
       await refreshScheduleEditor();
-
       await syncAfterScheduleChange();
-
       return;
     }
 
-    // Пример: добавить новую задачу в расписание
+    // добавить новую задачу в расписание
     if (t.matches("[data-action='schedule-add-task']")) {
       const dayKey = t.getAttribute("data-day");
       await addTaskToSchedule(dayKey);
 
       state.scheduleEdit = await repo.getScheduleEditState();
       await refreshScheduleEditor();
-
       await syncAfterScheduleChange();
-
       return;
     }
   });
 
-  // ПЕРИОДИЧЕСКАЯ ФОНОВАЯ СИНХРОНИЗАЦИЯ
-  //
-  // Раз в 30 секунд спрашиваем сервер через SyncService.pollUpdates():
-  // - /api/list → сравнение updatedAt
-  // - если сервер свежее — стягиваем только эти куски (schedule или override дня)
-  //
-  // UI не блокируем.
-  // Пока мы не делаем авто-обновление экрана после pollUpdates,
-  // но мы можем это легко добавить позже (просто вызвать refreshDashboard()).
+  // Периодическая фоновая синхронизация:
+  // каждые 30 секунд спрашиваем сервер через pollUpdates().
   setInterval(() => {
     SyncService.pollUpdates().catch((e) => {
       console.warn("[events] pollUpdates failed", e);
@@ -518,5 +399,4 @@ async function initUI() {
   }, 30000);
 }
 
-// экспортируем initUI, потому что app.js его вызывает
 export { initUI };
