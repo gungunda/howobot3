@@ -1,4 +1,4 @@
-import { createClient } from "redis";
+const { createClient } = require("redis");
 
 let _redis = null;
 
@@ -12,7 +12,7 @@ async function getRedis() {
   return _redis;
 }
 
-export function json(data, status = 200) {
+function json(data, status = 200) {
   return {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
@@ -20,9 +20,9 @@ export function json(data, status = 200) {
   };
 }
 
-export function parseInitData(initData) {
-  if (typeof initData === "string" && initData.trim().length > 0) return { userId: "demo-user" };
-  if (initData && typeof initData === "object") return { userId: "demo-user" };
+// Пока подставляем стабильный userId для тестов.
+// Позже сюда добавим реальную валидацию Telegram initData.
+function parseInitData(initData) {
   return { userId: "demo-user" };
 }
 
@@ -41,7 +41,7 @@ async function setJSON(key, val) {
   await (await getRedis()).set(key, s);
 }
 
-export function resolveByUpdatedAt(serverMeta, clientMeta) {
+function resolveByUpdatedAt(serverMeta, clientMeta) {
   const s = serverMeta?.updatedAt || null;
   const c = clientMeta?.updatedAt || null;
   if (!s && c) return "client";
@@ -50,7 +50,7 @@ export function resolveByUpdatedAt(serverMeta, clientMeta) {
   return c > s ? "client" : "server";
 }
 
-export async function getSnapshot(uid) {
+async function getSnapshot(uid) {
   const r = await getRedis();
   const [sched, meta, indexStr] = await r.mGet([keySchedule(uid), keyScheduleMeta(uid), keyOvIndex(uid)]);
   const schedule = sched ? { schedule: JSON.parse(sched), meta: (meta ? JSON.parse(meta) : null) } : null;
@@ -69,7 +69,7 @@ export async function getSnapshot(uid) {
   return { schedule, overrides };
 }
 
-export async function putSchedule(uid, schedule, meta) {
+async function putSchedule(uid, schedule, meta) {
   const r = await getRedis();
   await r.mSet({
     [keySchedule(uid)]: JSON.stringify(schedule),
@@ -77,18 +77,18 @@ export async function putSchedule(uid, schedule, meta) {
   });
 }
 
-export async function getSchedule(uid) {
+async function getSchedule(uid) {
   const r = await getRedis();
   const [sched, meta] = await r.mGet([keySchedule(uid), keyScheduleMeta(uid)]);
   if (!sched) return null;
   return { schedule: JSON.parse(sched), meta: meta ? JSON.parse(meta) : null };
 }
 
-export async function getOverride(uid, dateKey) {
+async function getOverride(uid, dateKey) {
   return await getJSON(keyOverride(uid, dateKey));
 }
 
-export async function putOverride(uid, dateKey, override) {
+async function putOverride(uid, dateKey, override) {
   const r = await getRedis();
   const idxKey = keyOvIndex(uid);
   const idxRaw = await r.get(idxKey);
@@ -99,3 +99,14 @@ export async function putOverride(uid, dateKey, override) {
   }
   await setJSON(keyOverride(uid, dateKey), override);
 }
+
+module.exports = {
+  json,
+  parseInitData,
+  resolveByUpdatedAt,
+  getSnapshot,
+  putSchedule,
+  getSchedule,
+  getOverride,
+  putOverride
+};
