@@ -1,84 +1,99 @@
-// api/_utils.js
-// Перевод утилит API на персистентное хранилище Vercel KV.
-// Требуются переменные окружения на проекте Vercel: KV_REST_API_URL, KV_REST_API_TOKEN
-// Используем официальный SDK, он работает и в Edge, и в Node runtime.
+import { createClient } from "redis";
 
-import { kv } from '@vercel/kv';
+let _redis = null;
+
+async function getRedis() {
+  if (_redis && _redis.isOpen) return _redis;
+  const url = process.env.REDIS_URL;
+  if (!url) throw new Error("REDIS_URL is not set");
+  _redis = createClient({ url });
+  _redis.on("error", (err) => console.error("[redis] error:", err?.message || err));
+  await _redis.connect();
+  return _redis;
+}
 
 export function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' }
+    headers: { "content-type": "application/json; charset=utf-8" }
   });
 }
 
-// Простейший парсер initData (заглушка). Для продакшена нужно валидировать подпись Telegram.
 export function parseInitData(initData) {
-  if (!initData || typeof initData !== 'string') return null;
-  // TODO: разбор querystring + проверка hash (по токену бота).
-  return { userId: 'demo-user' };
+  if (!initData || typeof initData !== "string") return null;
+  return { userId: "demo-user" };
 }
 
-// --- Ключи в KV ---
-// schedule:      <uid>:schedule            → JSON объекта расписания + meta в соседнем ключе
-// scheduleMeta:  <uid>:schedule:meta
-// override:      <uid>:ov:<dateKey>        → JSON override
-// ovIndex:       <uid>:ov:index            → JSON-массив ["YYYY-MM-DD", ...] — список дат с override
+function keySchedule(uid)     { return `${uid}:schedule`; }
+function keyScheduleMeta(uid) { return `${uid}:schedule:meta`; }
+function keyOverride(uid,d)   { return `${uid}:ov:${d}`; }
+function keyOvIndex(uid)      { return `${uid}:ov:index`; }
 
-function keySchedule(uid)      { return `${uid}:schedule`; }
-function keyScheduleMeta(uid)  { return `${uid}:schedule:meta`; }
-function keyOverride(uid, d)   { return `${uid}:ov:${d}`; }
-function keyOvIndex(uid)       { return `${uid}:ov:index`; }
+async function getJSON(key) {
+  const r = await (await getRedis()).get(key);
+  if (r == null) return null;
+  try { return JSON.parse(r); } catch { return null; }
+}
+async function setJSON(key, val) {
+  const s = JSON.stringify(val);
+  await (await getRedis()).set(key, s);
+}
+
+export function resolveByUpdatedAt(serverMeta, clientMeta) {
+  const s = serverMeta?.updatedAt || null;
+  const c = clientMeta?.updatedAt || null;
+  if (!s && c) return "client";
+  if (s && !c) return "server";
+  if (!s && !c) return "client";
+  return c > s ? "client" : "server";
+}
 
 export async function getSnapshot(uid) {
-  const [sched, meta, index] = await Promise.all([
-    kv.get(keySchedule(uid)),
-    kv.get(keyScheduleMeta(uid)),
-    kv.get(keyOvIndex(uid))
-  ]);
-
+  const r = await getRedis();
+  const [sched, meta, indexStr] = await r.mGet([keySchedule(uid), keyScheduleMeta(uid), keyOvIndex(uid)]);
+  const schedule = sched ? { schedule: JSON.parse(sched), meta: (meta ? JSON.parse(meta) : null) } : null;
   const overrides = {};
-  if (Array.isArray(index)) {
-    const keys = index.map(d => keyOverride(uid, d));
-    const rows = keys.length ? await kv.mget(...keys) : [];
-    rows.forEach((val, i) => {
-      const dateKey = index[i];
-      if (val) overrides[dateKey] = val;
+  const index = indexStr ? JSON.parse(indexStr) : [];
+  if (Array.isArray(index) && index.length) {
+    const keys = index.map((d) => keyOverride(uid, d));
+    const vals = await r.mGet(keys);
+    vals.forEach((raw, i) => {
+      if (raw) {
+        const dateKey = index[i];
+        overrides[dateKey] = JSON.parse(raw);
+      }
     });
   }
-
-  const schedule = sched ? { schedule: sched, meta: meta || null } : null;
   return { schedule, overrides };
 }
 
 export async function putSchedule(uid, schedule, meta) {
-  await Promise.all([
-    kv.set(keySchedule(uid), schedule),
-    kv.set(keyScheduleMeta(uid), meta || { updatedAt: new Date().toISOString(), deviceId: 'unknown' })
-  ]);
+  const r = await getRedis();
+  await r.mSet({
+    [keySchedule(uid)]: JSON.stringify(schedule),
+    [keyScheduleMeta(uid)]: JSON.stringify(meta || { updatedAt: new Date().toISOString(), deviceId: "unknown" })
+  });
 }
 
 export async function getSchedule(uid) {
-  const [sched, meta] = await Promise.all([
-    kv.get(keySchedule(uid)),
-    kv.get(keyScheduleMeta(uid))
-  ]);
+  const r = await getRedis();
+  const [sched, meta] = await r.mGet([keySchedule(uid), keyScheduleMeta(uid)]);
   if (!sched) return null;
-  return { schedule: sched, meta: meta || null };
+  return { schedule: JSON.parse(sched), meta: meta ? JSON.parse(meta) : null };
 }
 
 export async function getOverride(uid, dateKey) {
-  const val = await kv.get(keyOverride(uid, dateKey));
-  return val || null;
+  return await getJSON(keyOverride(uid, dateKey));
 }
 
 export async function putOverride(uid, dateKey, override) {
-  // поддерживаем индекс дат
+  const r = await getRedis();
   const idxKey = keyOvIndex(uid);
-  const index = (await kv.get(idxKey)) || [];
+  const idxRaw = await r.get(idxKey);
+  const index = idxRaw ? JSON.parse(idxRaw) : [];
   if (!index.includes(dateKey)) {
     index.push(dateKey);
-    await kv.set(idxKey, index);
+    await r.set(idxKey, JSON.stringify(index));
   }
-  await kv.set(keyOverride(uid, dateKey), override);
+  await setJSON(keyOverride(uid, dateKey), override);
 }
