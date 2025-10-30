@@ -1,42 +1,17 @@
-import { kv } from "@vercel/kv";
-import { getUserIdOrFail } from "./_getUserId.js";
+import { json, parseInitData, getSchedule } from "./_utils.js";
 
-/**
- * /api/getSchedule
- *
- * Возвращает текущее недельное расписание.
- * {
- *   ok: true,
- *   schedule: { monday: [...], ... } | null,
- *   meta: { updatedAt, deviceId } | null
- * }
- */
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.status(405).json({ ok: false, error: "Method not allowed" });
-    return;
-  }
+export async function POST(req) {
+  let payload = {};
+  try { payload = await req.json(); } catch {}
+  const initData = payload?.initData || null;
 
-  const auth = await getUserIdOrFail(req, res);
-  if (!auth.ok) return;
-  const { userId } = auth;
+  const parsed = parseInitData(initData);
+  if (!parsed) return json({ ok: false, error: "bad_init_data" }, 400);
 
-  const scheduleKey = `planner:${userId}:schedule`;
-  const scheduleData = await kv.get(scheduleKey);
+  const rec = getSchedule(parsed.userId);
+  if (!rec) return json({ ok: true, schedule: null });
 
-  if (!scheduleData) {
-    // Ещё ни разу не сохраняли расписание
-    res.status(200).json({
-      ok: true,
-      schedule: null,
-      meta: null
-    });
-    return;
-  }
-
-  res.status(200).json({
-    ok: true,
-    schedule: scheduleData.schedule || null,
-    meta: scheduleData.meta || null
-  });
+  return json({ ok: true, schedule: rec.schedule, meta: rec.meta || null });
 }
+
+export const runtime = "edge";

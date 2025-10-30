@@ -1,50 +1,17 @@
-import { kv } from "@vercel/kv";
-import { getUserIdOrFail } from "./_getUserId.js";
+import { json, parseInitData, getOverride } from "./_utils.js";
 
-/**
- * /api/getOverride
- *
- * Тело запроса:
- * {
- *   initData: "...",
- *   dateKey: "2025-10-27"
- * }
- *
- * Ответ:
- * {
- *   ok: true,
- *   override: { dateKey, tasks, meta } | null
- * }
- */
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.status(405).json({ ok: false, error: "Method not allowed" });
-    return;
-  }
+export async function POST(req) {
+  let payload = {};
+  try { payload = await req.json(); } catch {}
+  const initData = payload?.initData || null;
+  const dateKey  = payload?.dateKey;
 
-  const auth = await getUserIdOrFail(req, res);
-  if (!auth.ok) return;
-  const { userId, body } = auth;
+  const parsed = parseInitData(initData);
+  if (!parsed) return json({ ok: false, error: "bad_init_data" }, 400);
+  if (!dateKey) return json({ ok: false, error: "bad_dateKey" }, 400);
 
-  const { dateKey } = body;
-  if (!dateKey) {
-    res.status(400).json({ ok: false, error: "missing dateKey" });
-    return;
-  }
-
-  const oKey = `planner:${userId}:override:${dateKey}`;
-  const oData = await kv.get(oKey);
-
-  if (!oData) {
-    res.status(200).json({
-      ok: true,
-      override: null
-    });
-    return;
-  }
-
-  res.status(200).json({
-    ok: true,
-    override: oData
-  });
+  const ov = getOverride(parsed.userId, dateKey);
+  return json({ ok: true, override: ov || null });
 }
+
+export const runtime = "edge";
