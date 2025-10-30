@@ -19,8 +19,21 @@ export function json(data, status = 200) {
   });
 }
 
+/**
+ * БЕЗОПАСНЫЙ ПАРСЕР initData:
+ * - При отсутствии или неверном типе НЕ падаем, а подставляем стабильный userId.
+ * - В Telegram можно будет позже добавить реальную проверку подписи.
+ */
 export function parseInitData(initData) {
-  if (!initData || typeof initData !== "string") return null;
+  // Если пришла непустая строка — используем её (в проде тут будет валидация hash).
+  if (typeof initData === "string" && initData.trim().length > 0) {
+    return { userId: "demo-user" };
+  }
+  // Если пришёл объект от initDataUnsafe — тоже принимаем.
+  if (initData && typeof initData === "object") {
+    return { userId: "demo-user" };
+  }
+  // Fallback для локального и любого окружения без Telegram.
   return { userId: "demo-user" };
 }
 
