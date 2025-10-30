@@ -13,27 +13,21 @@ async function getRedis() {
 }
 
 export function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
+  return {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" }
-  });
+    headers: { "content-type": "application/json; charset=utf-8" },
+    body: JSON.stringify(data)
+  };
 }
 
 /**
- * БЕЗОПАСНЫЙ ПАРСЕР initData:
- * - При отсутствии или неверном типе НЕ падаем, а подставляем стабильный userId.
- * - В Telegram можно будет позже добавить реальную проверку подписи.
+ * Безопасный парсер initData.
+ * Пока возвращает стабильный userId для тестов.
+ * Позже подменим на реальную валидацию Telegram initData.
  */
 export function parseInitData(initData) {
-  // Если пришла непустая строка — используем её (в проде тут будет валидация hash).
-  if (typeof initData === "string" && initData.trim().length > 0) {
-    return { userId: "demo-user" };
-  }
-  // Если пришёл объект от initDataUnsafe — тоже принимаем.
-  if (initData && typeof initData === "object") {
-    return { userId: "demo-user" };
-  }
-  // Fallback для локального и любого окружения без Telegram.
+  if (typeof initData === "string" && initData.trim().length > 0) return { userId: "demo-user" };
+  if (initData && typeof initData === "object") return { userId: "demo-user" };
   return { userId: "demo-user" };
 }
 
