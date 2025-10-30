@@ -176,3 +176,17 @@ export async function getKeys() {
     return [];
   }
 }
+
+/* === ВАЖНОЕ ДОБАВЛЕНИЕ ===
+   Именованный объект-обёртка, чтобы импорт в repo.js
+   `import { Storage } from '../infra/telegramEnv.js'` работал корректно.
+   При этом сохраняем и прежние именованные функции (init/getMode/…),
+   чтобы не ломать другие места.
+*/
+export const Storage = {
+  init,
+  getMode,
+  getItem,
+  setItem,
+  getKeys
+};
