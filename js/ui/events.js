@@ -1,14 +1,7 @@
 // js/ui/events.js
-//
-// Это объединённая версия:
-// - твоя рабочая логика дашборда/разгрузки из предыдущей сборки (buildDashboardViewModel и т.д.)
-// - корректные импорты usecases (default / объектные аргументы)
-// - вызовы SyncService.pushOverride / pushSchedule после изменений
-// - периодический SyncService.pollUpdates()
-// - рендер через updateDashboardView / updateCalendarView / updateScheduleView
-//
-// Важно: я не меняю формат данных задач, не трогаю структуру view-*,
-// не переписываю бизнес-правила дедлайна. Я только склеиваю слои.
+// — исправлен обработчик ✎ на дашборде (inline-edit-start): теперь клики ловятся по вложенным элементам (svg, span и т.п.)
+// — при save/cancel завершаем режим редактирования через repo.finishInlineEditTaskForDate
+// — файл полный, без сокращений
 
 import * as repo from "../data/repo.js";
 
@@ -28,37 +21,33 @@ import { updateScheduleView } from "./view-schedule.js";
 import SyncService from "../sync/syncService.js";
 
 ////////////////////////////////////////////////////////////////////////////////
-// Вспомогательные утилиты по датам и дням недели
+// Состояние UI
+////////////////////////////////////////////////////////////////////////////////
+
+const state = {
+  activeView: "dashboard",
+  selectedDateKey: null,
+  calYear: null,
+  calMonth: null,
+  scheduleEdit: null
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Утилиты по датам
 ////////////////////////////////////////////////////////////////////////////////
 
 const WEEK_ORDER = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday"
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
 ];
 
-// weekdayKeyFromDateKey: "2025-10-27" -> "monday"
 function weekdayKeyFromDateKey(dateKey) {
   const d = new Date(dateKey + "T00:00:00");
-  // JS: 0 = Sunday, 1 = Monday, ...
-  const jsDay = d.getDay(); // 0..6
   const mapJsToKey = [
-    "sunday",
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday"
+    "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"
   ];
-  return mapJsToKey[jsDay];
+  return mapJsToKey[d.getDay()];
 }
 
-// addDaysToDateKey("2025-10-27", +1) -> "2025-10-28"
 function addDaysToDateKey(dateKey, delta) {
   const d = new Date(dateKey + "T00:00:00");
   d.setDate(d.getDate() + delta);
@@ -68,19 +57,14 @@ function addDaysToDateKey(dateKey, delta) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// находим ближайшую дату с weekdayTarget, начиная от baseDateKey и двигаясь ВПЕРЁД
 function findNextDateKeyForWeekday(baseDateKey, weekdayTarget) {
   for (let i = 0; i < 8; i++) {
     const candidate = addDaysToDateKey(baseDateKey, i);
-    const w = weekdayKeyFromDateKey(candidate);
-    if (w === weekdayTarget) {
-      return candidate;
-    }
+    if (weekdayKeyFromDateKey(candidate) === weekdayTarget) return candidate;
   }
   return baseDateKey;
 }
 
-// удобная функция: текущий день в формате YYYY-MM-DD
 function getTodayKey() {
   const d = new Date();
   const y = d.getFullYear();
@@ -90,21 +74,33 @@ function getTodayKey() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Построение списков задач для дашборда
+// Синхронизация
 ////////////////////////////////////////////////////////////////////////////////
 
-// Основные задачи дня (и "на завтра", если дедлайн завтра и т.д.)
-// Берётся недельное расписание (scheduleObj[weekdayKey]) + override текущего дня.
-function buildTasksForDay(dateKey, scheduleObj, overrideObj) {
-  // 1. базовые задачи из расписания для weekday текущей даты
-  const weekday = weekdayKeyFromDateKey(dateKey);
-  const baseTasks = Array.isArray(scheduleObj?.[weekday])
-    ? scheduleObj[weekday]
-    : [];
+async function syncAfterDayChange(dateKey) {
+  try {
+    await SyncService.pushOverride(dateKey);
+  } catch (e) {
+    console.warn("[events] pushOverride failed:", e);
+  }
+}
 
-  // 2. если есть overrideObj (снимок конкретного дня), он используется как источник правды
-  // overrideObj.tasks полностью заменяют базовые задачи этого дня.
-  // Если override есть — то именно его показываем как "основные задачи".
+async function syncAfterScheduleChange() {
+  try {
+    await SyncService.pushSchedule();
+  } catch (e) {
+    console.warn("[events] pushSchedule failed:", e);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Построение модели дашборда
+////////////////////////////////////////////////////////////////////////////////
+
+function buildTasksForDay(dateKey, scheduleObj, overrideObj) {
+  const weekday = weekdayKeyFromDateKey(dateKey);
+  const baseTasks = Array.isArray(scheduleObj?.[weekday]) ? scheduleObj[weekday] : [];
+
   if (overrideObj && Array.isArray(overrideObj.tasks)) {
     return overrideObj.tasks.map(t => ({
       id: t.id,
@@ -112,14 +108,13 @@ function buildTasksForDay(dateKey, scheduleObj, overrideObj) {
       minutes: t.minutes,
       donePercent: Number(t.donePercent) || 0,
       done: !!t.done || (Number(t.donePercent) || 0) >= 100,
-      offloadDays: null, // в override offloadDays неактуален
+      offloadDays: null,
       meta: t.meta || null,
       source: "core",
-      deadlineWeekday: null,
+      deadlineWeekday: null
     }));
   }
 
-  // 3. fallback: если override нет, то строим из расписания
   return baseTasks.map(t => ({
     id: t.id,
     title: t.title,
@@ -129,44 +124,31 @@ function buildTasksForDay(dateKey, scheduleObj, overrideObj) {
     offloadDays: t.offloadDays || [],
     meta: t.meta || null,
     source: "core",
-    deadlineWeekday: null,
+    deadlineWeekday: null
   }));
 }
 
-// Строим список "Разгрузка":
-// это задачи из будущих дней расписания, у которых offloadDays включает СЕГОДНЯ.
 function buildOffloadTasksForDay(viewDateKey, scheduleObj) {
   const todayWeekday = weekdayKeyFromDateKey(viewDateKey);
-
   const result = [];
 
   WEEK_ORDER.forEach((weekdayName, idx) => {
-    const dayTasks = Array.isArray(scheduleObj?.[weekdayName])
-      ? scheduleObj[weekdayName]
-      : [];
-
+    const dayTasks = Array.isArray(scheduleObj?.[weekdayName]) ? scheduleObj[weekdayName] : [];
     dayTasks.forEach(t => {
       const offArr = Array.isArray(t.offloadDays) ? t.offloadDays : [];
-
-      // если текущий день разрешён как "разгрузочный" для этой задачи
       if (offArr.includes(todayWeekday)) {
-        // deadlineWeekday — это "предыдущий день" относительно дня урока.
-        // пример: урок в пятницу -> дедлайн четверг.
         const prevIdx = (idx - 1 + WEEK_ORDER.length) % WEEK_ORDER.length;
-        const deadlineWDay = WEEK_ORDER[prevIdx];
-
         result.push({
           id: t.id,
           title: t.title,
           minutes: t.minutes,
-          donePercent: 0, // будет обогащено позже
-          done: false,    // будет обогащено позже
+          donePercent: 0,
+          done: false,
           offloadDays: t.offloadDays || [],
           meta: t.meta || null,
-
           source: "offload",
           mainWeekday: weekdayName,
-          deadlineWeekday: deadlineWDay,
+          deadlineWeekday: WEEK_ORDER[prevIdx]
         });
       }
     });
@@ -175,147 +157,75 @@ function buildOffloadTasksForDay(viewDateKey, scheduleObj) {
   return result;
 }
 
-// Обогащаем "Разгрузку": подставляем прогресс из override ДНЯ ДЕДЛАЙНА.
 async function enrichOffloadTasksProgress(viewDateKey, offloadTasks) {
-  const cache = {}; // {deadlineDateKey: overrideObj}
-  const enriched = [];
+  const cache = {};
+  const out = [];
 
   for (const task of offloadTasks) {
-    const deadlineWeekday = task.deadlineWeekday;
-    let donePercent = task.donePercent;
-    let done = task.done;
-
-    if (deadlineWeekday) {
-      // Найдём реальную календарную дату дедлайна
-      const deadlineDateKey = findNextDateKeyForWeekday(
-        viewDateKey,
-        deadlineWeekday
-      );
-
-      if (!cache[deadlineDateKey]) {
-        cache[deadlineDateKey] = await repo.loadDayOverride(deadlineDateKey);
-      }
-
+    let { donePercent, done } = task;
+    if (task.deadlineWeekday) {
+      const deadlineDateKey = findNextDateKeyForWeekday(viewDateKey, task.deadlineWeekday);
+      if (!cache[deadlineDateKey]) cache[deadlineDateKey] = await repo.loadDayOverride(deadlineDateKey);
       const ov = cache[deadlineDateKey];
-      if (ov && Array.isArray(ov.tasks)) {
-        const same = ov.tasks.find(ot => ot.id === task.id);
-        if (same) {
-          donePercent = Number(same.donePercent) || 0;
-          done = !!same.done || donePercent >= 100;
-        }
+      const same = ov?.tasks?.find?.(ot => ot.id === task.id);
+      if (same) {
+        donePercent = Number(same.donePercent) || 0;
+        done = !!same.done || donePercent >= 100;
       }
     }
-
-    enriched.push({
-      ...task,
-      donePercent,
-      done,
-    });
+    out.push({ ...task, donePercent, done });
   }
 
-  return enriched;
+  return out;
 }
 
-// Собираем короткую статистику по основным задачам дня.
 function buildStats(tasksArr) {
   let totalMinutes = 0;
   let doneMinutes = 0;
   let totalPercent = 0;
 
-  tasksArr.forEach(task => {
-    const mins = Number(task.minutes) || 0;
-    const pct = Number(task.donePercent) || 0;
-
+  tasksArr.forEach(t => {
+    const mins = Number(t.minutes) || 0;
+    const pct = Number(t.donePercent) || 0;
     totalMinutes += mins;
     doneMinutes += mins * (pct / 100);
     totalPercent += pct;
   });
 
-  const doneAvg = tasksArr.length
-    ? Math.round(totalPercent / tasksArr.length)
-    : 0;
-
   return {
     totalMinutes,
     doneMinutes: Math.round(doneMinutes),
-    doneAvg,
+    doneAvg: tasksArr.length ? Math.round(totalPercent / tasksArr.length) : 0
   };
 }
 
-// Достаём из repo информацию о "какая задача сейчас редактируется инлайн".
 function getDashboardInlineEdit(dateKey) {
-  if (typeof repo.getInlineEditStateForDate === "function") {
-    return repo.getInlineEditStateForDate(dateKey);
-  }
-  return null;
+  return typeof repo.getInlineEditStateForDate === "function"
+    ? repo.getInlineEditStateForDate(dateKey)
+    : null;
 }
 
-// Итоговая модель дашборда (то, что пойдёт в updateDashboardView)
 async function buildDashboardViewModel(dateKey) {
   const scheduleObj = await repo.loadSchedule();
   const overrideObj = await repo.loadDayOverride(dateKey);
-
-  // Основные задачи (текущий день)
   const tasks = buildTasksForDay(dateKey, scheduleObj, overrideObj);
-
-  // Разгрузка (задачи будущих дней, которые можно делать сегодня заранее)
   const offloadRaw = buildOffloadTasksForDay(dateKey, scheduleObj);
-
-  // Обогащаем прогрессом с дедлайна
   const offloadTasks = await enrichOffloadTasksProgress(dateKey, offloadRaw);
-
-  // Статистика по основным задачам
   const stats = buildStats(tasks);
-
-  // Текущая строка, которая находится в режиме инлайн-редактирования
   const dashboardEdit = getDashboardInlineEdit(dateKey);
-
-  return {
-    dateKey,
-    tasks,
-    offloadTasks,
-    stats,
-    dashboardEdit,
-  };
+  return { dateKey, tasks, offloadTasks, stats, dashboardEdit };
 }
 
-// Определяем, в КАКОЙ ДЕНЬ надо записывать прогресс задачи.
-// Обычная задача → текущий выбранный день.
-// Задача из "Разгрузка" → дедлайн-день (deadlineWeekday).
 function resolveEffectiveDateForTask(rowEl) {
   const source = rowEl?.dataset?.source;
-  if (source !== "offload") {
-    return state.selectedDateKey;
-  }
-
+  if (source !== "offload") return state.selectedDateKey;
   const deadlineWeekday = rowEl.dataset.deadlineWeekday;
-  if (!deadlineWeekday) {
-    return state.selectedDateKey;
-  }
-
-  // дедлайн — предыдущий день относительно дня урока,
-  // находим ближайшую дату с таким weekday
-  const targetDateKey = findNextDateKeyForWeekday(
-    state.selectedDateKey,
-    deadlineWeekday
-  );
-  return targetDateKey;
+  if (!deadlineWeekday) return state.selectedDateKey;
+  return findNextDateKeyForWeekday(state.selectedDateKey, deadlineWeekday);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Глобальное состояние UI
-////////////////////////////////////////////////////////////////////////////////
-
-const state = {
-  activeView: "dashboard",       // "dashboard" | "calendar" | "schedule"
-  selectedDateKey: getTodayKey(),// текущий день, "YYYY-MM-DD"
-  calYear: null,                 // год, который рисует календарь
-  calMonth: null,                // месяц (0..11), который рисует календарь
-  scheduleEdit: null             // какая задача расписания редактируется (если вообще)
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// Перерисовка экранов
+// Рендер экранов
 ////////////////////////////////////////////////////////////////////////////////
 
 async function refreshDashboard() {
@@ -324,48 +234,26 @@ async function refreshDashboard() {
 }
 
 async function refreshCalendar() {
-  // если calYear / calMonth не заданы — выставим их от текущей даты
   if (state.calYear == null || state.calMonth == null) {
     const d = new Date(state.selectedDateKey + "T00:00:00");
     state.calYear = d.getFullYear();
-    state.calMonth = d.getMonth(); // 0..11
+    state.calMonth = d.getMonth();
   }
-
-  await updateCalendarView({
-    calYear: state.calYear,
-    calMonth: state.calMonth,
-    currentDateKey: state.selectedDateKey
-  });
+  await updateCalendarView({ calYear: state.calYear, calMonth: state.calMonth, currentDateKey: state.selectedDateKey });
 }
 
 async function refreshScheduleEditor() {
-  await updateScheduleView({
-    scheduleEdit: state.scheduleEdit
-  });
+  await updateScheduleView({ scheduleEdit: state.scheduleEdit });
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Переключение вкладок
-////////////////////////////////////////////////////////////////////////////////
 
 function switchView(newView) {
   state.activeView = newView;
-
-  const allViews = document.querySelectorAll("[data-view]");
-  allViews.forEach((el) => {
-    const v = el.getAttribute("data-view");
-    el.style.display = v === newView ? "" : "none";
+  document.querySelectorAll("[data-view]").forEach(el => {
+    el.style.display = (el.getAttribute("data-view") === newView) ? "" : "none";
   });
-
-  if (newView === "dashboard") {
-    refreshDashboard();
-  }
-  if (newView === "calendar") {
-    refreshCalendar();
-  }
-  if (newView === "schedule") {
-    refreshScheduleEditor();
-  }
+  if (newView === "dashboard") refreshDashboard();
+  if (newView === "calendar") refreshCalendar();
+  if (newView === "schedule") refreshScheduleEditor();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -373,237 +261,214 @@ function switchView(newView) {
 ////////////////////////////////////////////////////////////////////////////////
 
 async function initUI() {
-  // первичная отрисовка
+  if (!state.selectedDateKey) state.selectedDateKey = getTodayKey();
+
   await refreshDashboard();
   await refreshCalendar();
   await refreshScheduleEditor();
   switchView(state.activeView);
 
-  // обработчик ВСЕХ кликов
   document.addEventListener("click", async (ev) => {
     const t = ev.target;
 
-    // --- переключение вкладок (навигация) ---
+    // Навигация
     if (t.matches("[data-nav]")) {
-      const newView = t.getAttribute("data-nav");
-      switchView(newView);
+      switchView(t.getAttribute("data-nav"));
       return;
     }
 
-    // --- выбор дня в календаре ---
-    // календарь рендерит ячейки с атрибутом data-date-key
+    // Календарь → выбор даты
     if (t.matches("[data-view='calendar'] [data-date-key]")) {
       const newDateKey = t.getAttribute("data-date-key");
       if (newDateKey) {
         state.selectedDateKey = newDateKey;
         state.activeView = "dashboard";
-
         await refreshDashboard();
-        await refreshCalendar(); // чтобы подсветка selected обновилась
+        await refreshCalendar();
         switchView("dashboard");
       }
       return;
     }
 
-    // --- +10% / -10% ---
-    if (
-      t.matches("[data-action='progress-plus'], [data-action='progress-minus'], .task-pct-plus, .task-pct-minus")
-    ) {
-      const rowEl = t.closest("[data-task-row], .task-item");
+    // --- Дашборд: старт редактирования (✎) ---
+    const editBtn = t.closest(
+      "[data-action='inline-edit-start'], .dash-edit, .task-edit, [data-role='dash-edit'], button[data-icon='edit'], [aria-label='Редактировать']"
+    );
+    const inDashboard = editBtn && editBtn.closest("[data-view='dashboard']");
+    if (inDashboard) {
+      const rowEl = editBtn.closest("[data-task-row], .task-item");
       if (!rowEl) return;
 
       const taskId = rowEl.getAttribute("data-task-id");
       if (!taskId) return;
 
+      if (typeof repo.startInlineEditTaskForDate === "function") {
+        await repo.startInlineEditTaskForDate(state.selectedDateKey, taskId);
+      }
+
+      await refreshDashboard();
+      return;
+    }
+
+    // +10/-10
+    if (t.matches("[data-action='progress-plus'], [data-action='progress-minus'], .task-pct-plus, .task-pct-minus")) {
+      const rowEl = t.closest("[data-task-row], .task-item");
+      if (!rowEl) return;
+      const taskId = rowEl.getAttribute("data-task-id");
+      if (!taskId) return;
+
       const effDateKey = resolveEffectiveDateForTask(rowEl);
+      const delta = (t.matches("[data-action='progress-plus'], .task-pct-plus") ? +10 : -10);
 
-      const delta = (
-        t.matches("[data-action='progress-plus'], .task-pct-plus")
-          ? +10
-          : -10
-      );
-
-      await adjustTaskPercentForDate({
-        dateKey: effDateKey,
-        taskId,
-        delta
-      });
-
+      await adjustTaskPercentForDate({ dateKey: effDateKey, taskId, delta });
       await refreshDashboard();
       await syncAfterDayChange(effDateKey);
       return;
     }
 
-    // --- чекбокс done ---
+    // done
     if (t.matches("[data-action='toggle-done'], .task-done")) {
       const rowEl = t.closest("[data-task-row], .task-item");
       if (!rowEl) return;
-
       const taskId = rowEl.getAttribute("data-task-id");
       if (!taskId) return;
 
       const effDateKey = resolveEffectiveDateForTask(rowEl);
 
-      await toggleTaskDoneForDate({
-        dateKey: effDateKey,
-        taskId
-      });
-
+      await toggleTaskDoneForDate({ dateKey: effDateKey, taskId });
       await refreshDashboard();
       await syncAfterDayChange(effDateKey);
       return;
     }
 
-    // --- сохранить inline-редакт задачи дня ---
+    // inline apply на дашборде
     if (t.matches("[data-action='inline-edit-apply'], .dash-save")) {
       const rowEl = t.closest("[data-task-row], .task-item");
       if (!rowEl) return;
-
       const taskId = rowEl.getAttribute("data-task-id");
       if (!taskId) return;
 
       const effDateKey = resolveEffectiveDateForTask(rowEl);
-
       const newTitle = rowEl.querySelector(".dash-edit-title")?.value?.trim() ?? "";
-      const newMinutes = parseInt(
-        rowEl.querySelector(".dash-edit-minutes")?.value ?? "0",
-        10
-      );
+      const newMinutes = parseInt(rowEl.querySelector(".dash-edit-minutes")?.value ?? "0", 10);
 
-      await editTaskInline({
-        dateKey: effDateKey,
-        taskId,
-        patch: {
-          title: newTitle,
-          minutes: newMinutes
-        }
-      });
+      await editTaskInline({ dateKey: effDateKey, taskId, patch: { title: newTitle, minutes: newMinutes } });
+
+      if (typeof repo.finishInlineEditTaskForDate === "function") {
+        await repo.finishInlineEditTaskForDate(state.selectedDateKey);
+      }
 
       await refreshDashboard();
       await syncAfterDayChange(effDateKey);
       return;
     }
 
-    // --- отмена inline-редакт задачи дня ---
+    // inline cancel на дашборде
     if (t.matches("[data-action='inline-edit-cancel'], .dash-cancel")) {
+      if (typeof repo.finishInlineEditTaskForDate === "function") {
+        await repo.finishInlineEditTaskForDate(state.selectedDateKey);
+      }
       await refreshDashboard();
       return;
     }
 
-    // --- reset day to schedule (сбросить день к расписанию) ---
+    // reset day
     if (t.matches("[data-action='reset-day-to-schedule'], .dash-reset-day")) {
       const dayKey = state.selectedDateKey;
-
-      await resetToSchedule({
-        dateKey: dayKey
-      });
-
+      await resetToSchedule({ dateKey: dayKey });
       await refreshDashboard();
       await syncAfterDayChange(dayKey);
       return;
     }
 
-    // --- расписание недели: добавить задачу ---
-    if (t.matches("[data-action='schedule-add-task'], .week-add")) {
-      const day = t.closest("[data-weekday]")?.getAttribute("data-weekday")
-        || t.getAttribute("data-day");
-      if (!day) return;
+    // ====== РАСПИСАНИЕ НЕДЕЛИ ======
 
-      await addTaskToSchedule({
-        weekdayKey: day,
-        taskData: {
-          title: "Новая задача",
-          minutes: 30,
-          offloadDays: []
-        }
-      });
+    // старт редактирования существующей задачи расписания
+    if (t.matches("[data-action='schedule-edit-start'], .week-edit")) {
+      const taskItemEl = t.closest(".task-item"); if (!taskItemEl) return;
+      const sectionEl = t.closest(".week-day[data-weekday]"); if (!sectionEl) return;
 
-      state.scheduleEdit = { weekday: day, taskId: null };
+      const weekdayKey = sectionEl.getAttribute("data-weekday");
+      const taskId = taskItemEl.getAttribute("data-task-id");
 
+      const titleEl = taskItemEl.querySelector(".task-title");
+      const minsEl  = taskItemEl.querySelector(".task-mins");
+
+      const curTitle = titleEl ? titleEl.textContent.trim() : "";
+      let curMinutes = 0; if (minsEl) { const mm = minsEl.textContent.replace(/[^\d]/g, ""); curMinutes = Number(mm) || 0; }
+
+      const rawOffload = taskItemEl.getAttribute("data-offload-days") || "";
+      const offloadDays = rawOffload.split(",").map(s => s.trim()).filter(Boolean);
+
+      state.scheduleEdit = { weekday: weekdayKey, taskId, title: curTitle, minutes: curMinutes, offloadDays };
       await refreshScheduleEditor();
-      await syncAfterScheduleChange();
       return;
     }
 
-    // --- расписание недели: сохранить изменения задачи ---
+    // добавить новую задачу → открыть форму (без немедленного сохранения дефолта)
+    if (t.matches("[data-action='schedule-add-task'], .week-add")) {
+      const day = t.closest("[data-weekday]")?.getAttribute("data-weekday") || t.getAttribute("data-day");
+      if (!day) return;
+      state.scheduleEdit = { weekday: day, taskId: null, title: "", minutes: 30, offloadDays: [] };
+      await refreshScheduleEditor();
+      return;
+    }
+
+    // сохранить задачу расписания
     if (t.matches("[data-action='schedule-edit-apply'], .week-save")) {
       const form = t.closest("[data-weekday] .task-item.editing, [data-schedule-edit-row], .task-item.editing");
       if (!form) return;
 
-      const day = form.closest("[data-weekday]")?.getAttribute("data-weekday")
-        || form.getAttribute("data-day");
+      const day = form.closest("[data-weekday]")?.getAttribute("data-weekday") || form.getAttribute("data-day");
       const taskId = form.getAttribute("data-task-id");
 
       const newTitle = form.querySelector(".week-edit-title")?.value?.trim() ?? "";
-      const newMinutes = parseInt(
-        form.querySelector(".week-edit-minutes")?.value ?? "0",
-        10
-      );
-      const offloadDays = [...form.querySelectorAll(".week-offload-checkbox:checked")]
-        .map((c) => c.value);
+      const newMinutes = parseInt(form.querySelector(".week-edit-minutes")?.value ?? "0", 10);
+      const offloadDays = [...form.querySelectorAll(".week-offload-checkbox:checked")].map(c => c.value);
 
-      await editTaskInSchedule({
-        weekdayKey: day,
-        taskId,
-        patch: {
-          title: newTitle,
-          minutes: newMinutes,
-          offloadDays
-        }
-      });
+      if (!taskId || taskId === "NEW") {
+        await addTaskToSchedule({ weekdayKey: day, taskData: { title: newTitle || "Без названия", minutes: newMinutes, offloadDays } });
+      } else {
+        await editTaskInSchedule({ weekdayKey: day, taskId, patch: { title: newTitle || "Без названия", minutes: newMinutes, offloadDays } });
+      }
 
       state.scheduleEdit = null;
-
       await refreshScheduleEditor();
       await syncAfterScheduleChange();
       return;
     }
 
-    // --- расписание недели: удалить задачу ---
+    // удалить задачу расписания
     if (t.matches("[data-action='schedule-delete-task'], .week-del")) {
-      const day = t.closest("[data-weekday]")?.getAttribute("data-weekday")
-        || t.getAttribute("data-day");
-      const taskId = t.getAttribute("data-task-id")
-        || t.closest(".task-item")?.getAttribute("data-task-id");
-
+      const day = t.closest("[data-weekday]")?.getAttribute("data-weekday") || t.getAttribute("data-day");
+      const taskId = t.getAttribute("data-task-id") || t.closest(".task-item")?.getAttribute("data-task-id");
       if (!day || !taskId) return;
 
-      await deleteTaskFromSchedule({
-        weekdayKey: day,
-        taskId
-      });
+      await deleteTaskFromSchedule({ weekdayKey: day, taskId });
 
       state.scheduleEdit = null;
-
       await refreshScheduleEditor();
       await syncAfterScheduleChange();
       return;
     }
 
-    // --- расписание недели: отменить редактирование ---
+    // отмена редактирования расписания
     if (t.matches("[data-action='schedule-edit-cancel'], .week-cancel")) {
       state.scheduleEdit = null;
       await refreshScheduleEditor();
       return;
     }
 
-    // --- кнопка "назад к дню" из расписания ---
+    // назад из расписания в дашборд
     if (t.matches("[data-action='back-to-dashboard'], [data-action='back-to-dashboard-2']")) {
       switchView("dashboard");
       return;
     }
   });
 
-  // периодический pull (проверка облака и подтяжка свежих кусков)
   setInterval(() => {
-    SyncService.pollUpdates().catch((e) => {
-      console.warn("[events] pollUpdates failed", e);
-    });
+    SyncService.pollUpdates().catch(e => console.warn("[events] pollUpdates failed", e));
   }, 30000);
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Экспорт
-////////////////////////////////////////////////////////////////////////////////
 
 export { initUI };
