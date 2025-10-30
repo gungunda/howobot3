@@ -1,46 +1,124 @@
 // js/app.js
 //
 // Точка входа приложения.
-// ВАЖНО: порядок инициализации такой:
-// 1. дождаться DOMContentLoaded
-// 2. вызвать await Storage.init()  — настроить режим хранения (local / cloud)
-// 3. ВСТАВЛЕНО: дождаться SyncService.pullBootstrap() — подтянуть свежие данные с сервера (Vercel KV)
-// 4. initUI() из events.js — отрисовать интерфейс на уже актуальных данных
 //
-// Это нужно для синхронизации между устройствами:
-// если ребёнок правил расписание/прогресс на планшете, а сейчас открыл телефон,
-// мы хотим подхватить последние данные ДО того как отрисуем экран.
+// Порядок инициализации:
+// 1) DOMContentLoaded
+// 2) setupDebugLog() — подключаем UI-логгер к нижней панели <pre id="debug-log">
+// 3) await Storage.init() — определяем режим хранения (local / cloud)
+// 4) await SyncService.pullBootstrap() — подтягиваем свежие данные с сервера (если доступно)
+// 5) initUI() — строим интерфейс
+//
+// Зачем нужен setupDebugLog:
+//  - В Telegram WebView нет DevTools. Поэтому мы дублируем console.* в нижнюю панель.
+//  - Многие модули проекта зовут window.debugLog(...). Раньше он мог быть не определён.
+//    Теперь мы гарантируем его наличие.
 
 import { Storage } from "./infra/telegramEnv.js";
 import { initUI } from "./ui/events.js";
-
-// новый импорт для синхронизации с сервером
 import SyncService from "./sync/syncService.js";
 
-document.addEventListener("DOMContentLoaded", async () => {
-  console.log("[app] DOM ready");
+/**
+ * setupDebugLog()
+ * Склеивает console.log/warn/error с панелью <pre id="debug-log"> (если она есть).
+ * Дополнительно создаёт window.debugLog(...), чтобы модули могли писать туда напрямую.
+ *
+ * Важно: не используем никаких внешних зависимостей и не меняем разметку.
+ */
+function setupDebugLog() {
+  // Не инициализируем повторно.
+  if (typeof window !== "undefined" && window.__debugLogInited__) return;
 
-  // 1. Инициализация слоя Storage
-  // Это важно: repo.js в дальнейшем читает/пишет через Storage.
-  await Storage.init();
-
-  console.log("[app] Storage mode =", Storage.getMode && Storage.getMode());
-
-  // 2. ПЕРЕД тем как строить UI — тянем актуальные данные с сервера
-  // pullBootstrap():
-  // - спросит /api/list
-  // - сравнит updatedAt с локальными версиями
-  // - подтянет только те override и расписание, которые на сервере свежее
-  // - сохранит их через repo в локальное хранилище
-  //
-  // Важно: если мы не в Telegram.WebApp (обычный браузер) — SyncService сам
-  // пропустит сетевую синхронизацию и просто ничего не сделает.
-  try {
-    await SyncService.pullBootstrap();
-  } catch (e) {
-    console.warn("[app] pullBootstrap failed (continue offline)", e);
+  function stringify(arg) {
+    if (arg == null) return String(arg);
+    if (typeof arg === "string") return arg;
+    if (arg instanceof Error) return arg.stack || arg.message || String(arg);
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      try { return String(arg); } catch { return "[unprintable]"; }
+    }
   }
 
-  // 3. Запуск UI-контроллера
+  function getLogEl() {
+    return document.getElementById("debug-log");
+  }
+
+  function appendLine(prefix, args) {
+    const el = getLogEl();
+    if (!el) return; // если панели нет — тихо выходим
+    const ts = new Date().toISOString().substring(11, 23); // HH:MM:SS.mmm
+    const line = (prefix ? prefix + " " : "") + ts + " " + args.map(stringify).join(" ");
+    el.textContent += line + "\n";
+    const shell = el.parentElement;
+    if (shell && typeof shell.scrollTop === "number") {
+      shell.scrollTop = shell.scrollHeight;
+    }
+  }
+
+  // Публичный хук для модулей проекта
+  window.debugLog = (...args) => appendLine("[DBG]", args);
+
+  // Проксируем console.*: сначала оригинал, затем в панель
+  const orig = {
+    log:   console.log.bind(console),
+    warn:  console.warn.bind(console),
+    error: console.error.bind(console),
+    info:  (console.info  ? console.info.bind(console)  : console.log.bind(console)),
+    debug: (console.debug ? console.debug.bind(console) : console.log.bind(console)),
+  };
+
+  console.log = (...args)   => { orig.log(...args);   appendLine("[LOG]", args); };
+  console.warn = (...args)  => { orig.warn(...args);  appendLine("[WRN]", args); };
+  console.error = (...args) => { orig.error(...args); appendLine("[ERR]", args); };
+  console.info = (...args)  => { orig.info(...args);  appendLine("[INF]", args); };
+  console.debug = (...args) => { orig.debug(...args); appendLine("[DBG]", args); };
+
+  window.__debugLogInited__ = true;
+  appendLine("[INF]", ["[app] UI logger attached"]);
+}
+
+/**
+ * setFooterMode(mode)
+ * Короткая подсказка внизу: “локальный режим” / “облачный режим (Telegram)”.
+ * Не обязательна для работы — это чисто UX-пометка.
+ */
+function setFooterMode(mode) {
+  try {
+    const f = document.querySelector("footer.footer");
+    if (!f) return;
+    const m = (mode === "cloud") ? "облачный режим (Telegram)"
+            : (mode === "local") ? "локальный режим"
+            : String(mode || "неизвестный режим");
+    f.textContent = `Лёшин планировщик · ${m}`;
+  } catch (_) {}
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  // 1) Логгер — до любых init, чтобы поймать все сообщения
+  setupDebugLog();
+  console.info("[app] DOM ready");
+
+  // Пояснение окружения (виден ли Telegram.WebApp)
+  const isTG = !!(window?.Telegram?.WebApp);
+  const tgVer = isTG ? window.Telegram.WebApp.version : "n/a";
+  console.info("[app] Telegram WebApp visible =", isTG, "version =", tgVer);
+
+  // 2) Инициализация Storage (определяем режим: local / cloud)
+  await Storage.init();
+  const mode = (typeof Storage.getMode === "function") ? Storage.getMode() : "unknown";
+  console.info("[app] Storage mode =", mode);
+  setFooterMode(mode);
+
+  // 3) Bootstrap-синхронизация с нашим сервером (Vercel), если доступно.
+  //    Ошибки — не критичны, приложение должно работать офлайн.
+  try {
+    await SyncService.pullBootstrap();
+    console.info("[app] pullBootstrap: OK");
+  } catch (e) {
+    console.warn("[app] pullBootstrap failed, continue offline:", e);
+  }
+
+  // 4) Запуск UI
   initUI();
 });
