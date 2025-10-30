@@ -20,11 +20,6 @@ export function json(data, status = 200) {
   };
 }
 
-/**
- * Безопасный парсер initData.
- * Пока возвращает стабильный userId для тестов.
- * Позже подменим на реальную валидацию Telegram initData.
- */
 export function parseInitData(initData) {
   if (typeof initData === "string" && initData.trim().length > 0) return { userId: "demo-user" };
   if (initData && typeof initData === "object") return { userId: "demo-user" };
