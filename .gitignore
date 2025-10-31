@@ -2,3 +2,8 @@ chatgpt/
 tests_old/
 api_old/
 public_old/
+.vercel
+node_modules/
+tools/
+.env.development.local
+.env*.local

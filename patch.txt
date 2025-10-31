@@ -1,105 +1,129 @@
 ===FILE_START===
-PATH: js/usecases/addTaskToSchedule.js
+PATH: js/app.js
 -----8<-----
-import { loadSchedule, saveSchedule } from "../data/repo.js";
-import { Schedule } from "../domain/entities.js";
+// js/app.js
+//
+// Точка входа приложения.
+//
+// Порядок инициализации:
+// 1) DOMContentLoaded
+// 2) setupDebugLog() — подключаем UI-логгер к нижней панели <pre id="debug-log">
+// 3) await Storage.init() — определяем режим хранения (local / cloud)
+// 4) await SyncService.pullBootstrap() — подтягиваем свежие данные с сервера (если доступно)
+// 5) initUI() — строим интерфейс
+//
+// Зачем нужен setupDebugLog:
+//  - В Telegram WebView нет DevTools. Поэтому мы дублируем console.* в нижнюю панель.
+//  - Многие модули проекта зовут window.debugLog(...). Раньше он мог быть не определён.
+//    Теперь мы гарантируем его наличие.
+
+import { Storage } from "./infra/telegramEnv.js";
+import { initUI } from "./ui/events.js";
+import SyncService from "./sync/syncService.js";
 
 /**
- * addTaskToSchedule
+ * setupDebugLog()
+ * Склеивает console.log/warn/error с панелью <pre id="debug-log"> (если она есть).
+ * Дополнительно создаёт window.debugLog(...), чтобы модули могли писать туда напрямую.
  *
- * Сценарий: пользователь добавляет новую задачу в расписание недели.
- *
- * Что происходит:
- *  1. Загружаем расписание (Schedule.fromJSON(...))
- *  2. Добавляем новую задачу в выбранный день недели
- *     через Schedule.withNewTask(weekdayKey, taskData)
- *  3. Сохраняем расписание обратно
- *
- * Пример taskData:
- * {
- *   title: "Математика, упр. 7",
- *   minutes: 30,
- *   offloadDays: ["tuesday", "thursday"]
- * }
+ * Важно: не используем никаких внешних зависимостей и не меняем разметку.
  */
-export default async function addTaskToSchedule({ weekdayKey, taskData }) {
-  // 1. Загружаем текущее расписание
-  const rawSchedule = await loadSchedule();
-  const schedule = Schedule.fromJSON(rawSchedule);
+function setupDebugLog() {
+  // Не инициализируем повторно.
+  if (typeof window !== "undefined" && window.__debugLogInited__) return;
 
-  // 2. Добавляем новую задачу
-  const updatedSchedule = schedule.withNewTask(weekdayKey, taskData);
+  function stringify(arg) {
+    if (arg == null) return String(arg);
+    if (typeof arg === "string") return arg;
+    if (arg instanceof Error) return arg.stack || arg.message || String(arg);
+    try {
+      return JSON.stringify(arg);
+    } catch {
+      try { return String(arg); } catch { return "[unprintable]"; }
+    }
+  }
 
-  // 3. Сохраняем обратно
-  await saveSchedule(updatedSchedule.toJSON(), "addTaskToSchedule");
+  function getLogEl() {
+    return document.getElementById("debug-log");
+  }
 
-  // 4. Возвращаем свежую копию расписания (для UI)
-  return updatedSchedule;
+  function appendLine(prefix, args) {
+    const el = getLogEl();
+    if (!el) return; // если панели нет — тихо выходим
+    const ts = new Date().toISOString().substring(11, 23); // HH:MM:SS.mmm
+    const line = (prefix ? prefix + " " : "") + ts + " " + args.map(stringify).join(" ");
+    el.textContent += line + "\n";
+    const shell = el.parentElement;
+    if (shell && typeof shell.scrollTop === "number") {
+      shell.scrollTop = shell.scrollHeight;
+    }
+  }
+
+  // Публичный хук для модулей проекта
+  window.debugLog = (...args) => appendLine("[DBG]", args);
+
+  // Проксируем console.*: сначала оригинал, затем в панель
+  const orig = {
+    log:   console.log.bind(console),
+    warn:  console.warn.bind(console),
+    error: console.error.bind(console),
+    info:  (console.info  ? console.info.bind(console)  : console.log.bind(console)),
+    debug: (console.debug ? console.debug.bind(console) : console.log.bind(console)),
+  };
+
+  console.log = (...args)   => { orig.log(...args);   appendLine("[LOG]", args); };
+  console.warn = (...args)  => { orig.warn(...args);  appendLine("[WRN]", args); };
+  console.error = (...args) => { orig.error(...args); appendLine("[ERR]", args); };
+  console.info = (...args)  => { orig.info(...args);  appendLine("[INF]", args); };
+  console.debug = (...args) => { orig.debug(...args); appendLine("[DBG]", args); };
+
+  window.__debugLogInited__ = true;
+  appendLine("[INF]", ["[app] UI logger attached"]);
 }
------8<-----
-===FILE_END===
-
-
-===FILE_START===
-PATH: js/usecases/editTaskInSchedule.js
------8<-----
-import { loadSchedule, saveSchedule } from "../data/repo.js";
-import { Schedule } from "../domain/entities.js";
 
 /**
- * editTaskInSchedule
- *
- * Сценарий: пользователь редактирует задачу в расписании недели.
- *
- * Что меняется:
- *  - название
- *  - минуты
- *  - список offloadDays (разгрузочных дней)
- *
- * Всё это делается через метод Schedule.withEditedTask(...)
+ * setFooterMode(mode)
+ * Короткая подсказка внизу: “локальный режим” / “облачный режим (Telegram)”.
+ * Не обязательна для работы — это чисто UX-пометка.
  */
-export default async function editTaskInSchedule({ weekdayKey, taskId, patch }) {
-  // 1. Загружаем текущее расписание
-  const rawSchedule = await loadSchedule();
-  const schedule = Schedule.fromJSON(rawSchedule);
-
-  // 2. Получаем обновлённое расписание с изменённой задачей
-  const updatedSchedule = schedule.withEditedTask(weekdayKey, taskId, patch);
-
-  // 3. Сохраняем обратно
-  await saveSchedule(updatedSchedule.toJSON(), "editTaskInSchedule");
-
-  return updatedSchedule;
+function setFooterMode(mode) {
+  try {
+    const f = document.querySelector("footer.footer");
+    if (!f) return;
+    const m = (mode === "cloud") ? "облачный режим (Telegram)"
+            : (mode === "local") ? "локальный режим"
+            : String(mode || "неизвестный режим");
+    f.textContent = `Лёшин планировщик · ${m}`;
+  } catch (_) {}
 }
------8<-----
-===FILE_END===
 
+document.addEventListener("DOMContentLoaded", async () => {
+  // 1) Логгер — до любых init, чтобы поймать все сообщения
+  setupDebugLog();
+  console.info("[app] DOM ready");
 
-===FILE_START===
-PATH: js/usecases/deleteTaskFromSchedule.js
------8<-----
-import { loadSchedule, saveSchedule } from "../data/repo.js";
-import { Schedule } from "../domain/entities.js";
+  // Пояснение окружения (виден ли Telegram.WebApp)
+  const isTG = !!(window?.Telegram?.WebApp);
+  const tgVer = isTG ? window.Telegram.WebApp.version : "n/a";
+  console.info("[app] Telegram WebApp visible =", isTG, "version =", tgVer);
 
-/**
- * deleteTaskFromSchedule
- *
- * Сценарий: пользователь удаляет задачу из расписания недели.
- *
- * Логика:
- *  1. Загружаем расписание
- *  2. Вызываем Schedule.withTaskRemoved(weekdayKey, taskId)
- *  3. Сохраняем обратно
- */
-export default async function deleteTaskFromSchedule({ weekdayKey, taskId }) {
-  const rawSchedule = await loadSchedule();
-  const schedule = Schedule.fromJSON(rawSchedule);
+  // 2) Инициализация Storage (определяем режим: local / cloud)
+  await Storage.init();
+  const mode = (typeof Storage.getMode === "function") ? Storage.getMode() : "unknown";
+  console.info("[app] Storage mode =", mode);
+  setFooterMode(mode);
 
-  const updatedSchedule = schedule.withTaskRemoved(weekdayKey, taskId);
+  // 3) Bootstrap-синхронизация с нашим сервером (Vercel), если доступно.
+  //    Ошибки — не критичны, приложение должно работать офлайн.
+  try {
+    await SyncService.pullBootstrap();
+    console.info("[app] pullBootstrap: OK");
+  } catch (e) {
+    console.warn("[app] pullBootstrap failed, continue offline:", e);
+  }
 
-  await saveSchedule(updatedSchedule.toJSON(), "deleteTaskFromSchedule");
-
-  return updatedSchedule;
-}
+  // 4) Запуск UI
+  initUI();
+});
 -----8<-----
 ===FILE_END===
