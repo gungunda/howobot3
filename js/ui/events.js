@@ -1,8 +1,4 @@
 // js/ui/events.js
-// — исправлен обработчик ✎ на дашборде (inline-edit-start): теперь клики ловятся по вложенным элементам (svg, span и т.п.)
-// — при save/cancel завершаем режим редактирования через repo.finishInlineEditTaskForDate
-// — файл полный, без сокращений
-
 import * as repo from "../data/repo.js";
 
 import adjustTaskPercentForDate from "../usecases/adjustTaskPercentForDate.js";
@@ -20,10 +16,6 @@ import { updateScheduleView } from "./view-schedule.js";
 
 import SyncService from "../sync/syncService.js";
 
-////////////////////////////////////////////////////////////////////////////////
-// Состояние UI
-////////////////////////////////////////////////////////////////////////////////
-
 const state = {
   activeView: "dashboard",
   selectedDateKey: null,
@@ -32,9 +24,7 @@ const state = {
   scheduleEdit: null
 };
 
-////////////////////////////////////////////////////////////////////////////////
-// Утилиты по датам
-////////////////////////////////////////////////////////////////////////////////
+export function getState() { return state; }
 
 const WEEK_ORDER = [
   "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
@@ -73,13 +63,10 @@ function getTodayKey() {
   return `${y}-${m}-${day}`;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Синхронизация
-////////////////////////////////////////////////////////////////////////////////
-
 async function syncAfterDayChange(dateKey) {
   try {
-    await SyncService.pushOverride(dateKey);
+    const ov = await repo.loadDayOverride(dateKey);
+    if (ov) await SyncService.pushOverride(dateKey, ov);
   } catch (e) {
     console.warn("[events] pushOverride failed:", e);
   }
@@ -87,15 +74,12 @@ async function syncAfterDayChange(dateKey) {
 
 async function syncAfterScheduleChange() {
   try {
-    await SyncService.pushSchedule();
+    const sched = await repo.loadSchedule();
+    if (sched) await SyncService.pushSchedule(sched);
   } catch (e) {
     console.warn("[events] pushSchedule failed:", e);
   }
 }
-
-////////////////////////////////////////////////////////////////////////////////
-// Построение модели дашборда
-////////////////////////////////////////////////////////////////////////////////
 
 function buildTasksForDay(dateKey, scheduleObj, overrideObj) {
   const weekday = weekdayKeyFromDateKey(dateKey);
@@ -224,11 +208,7 @@ function resolveEffectiveDateForTask(rowEl) {
   return findNextDateKeyForWeekday(state.selectedDateKey, deadlineWeekday);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Рендер экранов
-////////////////////////////////////////////////////////////////////////////////
-
-async function refreshDashboard() {
+export async function refreshDashboard() {
   const model = await buildDashboardViewModel(state.selectedDateKey);
   updateDashboardView(model);
 }
@@ -242,7 +222,7 @@ async function refreshCalendar() {
   await updateCalendarView({ calYear: state.calYear, calMonth: state.calMonth, currentDateKey: state.selectedDateKey });
 }
 
-async function refreshScheduleEditor() {
+export async function refreshScheduleEditor() {
   await updateScheduleView({ scheduleEdit: state.scheduleEdit });
 }
 
@@ -256,11 +236,7 @@ function switchView(newView) {
   if (newView === "schedule") refreshScheduleEditor();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// initUI
-////////////////////////////////////////////////////////////////////////////////
-
-async function initUI() {
+export async function initUI() {
   if (!state.selectedDateKey) state.selectedDateKey = getTodayKey();
 
   await refreshDashboard();
@@ -271,13 +247,11 @@ async function initUI() {
   document.addEventListener("click", async (ev) => {
     const t = ev.target;
 
-    // Навигация
     if (t.matches("[data-nav]")) {
       switchView(t.getAttribute("data-nav"));
       return;
     }
 
-    // Календарь → выбор даты
     if (t.matches("[data-view='calendar'] [data-date-key]")) {
       const newDateKey = t.getAttribute("data-date-key");
       if (newDateKey) {
@@ -290,7 +264,6 @@ async function initUI() {
       return;
     }
 
-    // --- Дашборд: старт редактирования (✎) ---
     const editBtn = t.closest(
       "[data-action='inline-edit-start'], .dash-edit, .task-edit, [data-role='dash-edit'], button[data-icon='edit'], [aria-label='Редактировать']"
     );
@@ -298,19 +271,15 @@ async function initUI() {
     if (inDashboard) {
       const rowEl = editBtn.closest("[data-task-row], .task-item");
       if (!rowEl) return;
-
       const taskId = rowEl.getAttribute("data-task-id");
       if (!taskId) return;
-
       if (typeof repo.startInlineEditTaskForDate === "function") {
         await repo.startInlineEditTaskForDate(state.selectedDateKey, taskId);
       }
-
       await refreshDashboard();
       return;
     }
 
-    // +10/-10
     if (t.matches("[data-action='progress-plus'], [data-action='progress-minus'], .task-pct-plus, .task-pct-minus")) {
       const rowEl = t.closest("[data-task-row], .task-item");
       if (!rowEl) return;
@@ -326,7 +295,6 @@ async function initUI() {
       return;
     }
 
-    // done
     if (t.matches("[data-action='toggle-done'], .task-done")) {
       const rowEl = t.closest("[data-task-row], .task-item");
       if (!rowEl) return;
@@ -341,7 +309,6 @@ async function initUI() {
       return;
     }
 
-    // inline apply на дашборде
     if (t.matches("[data-action='inline-edit-apply'], .dash-save")) {
       const rowEl = t.closest("[data-task-row], .task-item");
       if (!rowEl) return;
@@ -363,7 +330,6 @@ async function initUI() {
       return;
     }
 
-    // inline cancel на дашборде
     if (t.matches("[data-action='inline-edit-cancel'], .dash-cancel")) {
       if (typeof repo.finishInlineEditTaskForDate === "function") {
         await repo.finishInlineEditTaskForDate(state.selectedDateKey);
@@ -372,7 +338,6 @@ async function initUI() {
       return;
     }
 
-    // reset day
     if (t.matches("[data-action='reset-day-to-schedule'], .dash-reset-day")) {
       const dayKey = state.selectedDateKey;
       await resetToSchedule({ dateKey: dayKey });
@@ -381,9 +346,6 @@ async function initUI() {
       return;
     }
 
-    // ====== РАСПИСАНИЕ НЕДЕЛИ ======
-
-    // старт редактирования существующей задачи расписания
     if (t.matches("[data-action='schedule-edit-start'], .week-edit")) {
       const taskItemEl = t.closest(".task-item"); if (!taskItemEl) return;
       const sectionEl = t.closest(".week-day[data-weekday]"); if (!sectionEl) return;
@@ -405,7 +367,6 @@ async function initUI() {
       return;
     }
 
-    // добавить новую задачу → открыть форму (без немедленного сохранения дефолта)
     if (t.matches("[data-action='schedule-add-task'], .week-add")) {
       const day = t.closest("[data-weekday]")?.getAttribute("data-weekday") || t.getAttribute("data-day");
       if (!day) return;
@@ -414,7 +375,6 @@ async function initUI() {
       return;
     }
 
-    // сохранить задачу расписания
     if (t.matches("[data-action='schedule-edit-apply'], .week-save")) {
       const form = t.closest("[data-weekday] .task-item.editing, [data-schedule-edit-row], .task-item.editing");
       if (!form) return;
@@ -426,7 +386,7 @@ async function initUI() {
       const newMinutes = parseInt(form.querySelector(".week-edit-minutes")?.value ?? "0", 10);
       const offloadDays = [...form.querySelectorAll(".week-offload-checkbox:checked")].map(c => c.value);
 
-      if (!taskId || taskId === "NEW") {
+      if (!taskId || taskId == "NEW") {
         await addTaskToSchedule({ weekdayKey: day, taskData: { title: newTitle || "Без названия", minutes: newMinutes, offloadDays } });
       } else {
         await editTaskInSchedule({ weekdayKey: day, taskId, patch: { title: newTitle || "Без названия", minutes: newMinutes, offloadDays } });
@@ -438,7 +398,6 @@ async function initUI() {
       return;
     }
 
-    // удалить задачу расписания
     if (t.matches("[data-action='schedule-delete-task'], .week-del")) {
       const day = t.closest("[data-weekday]")?.getAttribute("data-weekday") || t.getAttribute("data-day");
       const taskId = t.getAttribute("data-task-id") || t.closest(".task-item")?.getAttribute("data-task-id");
@@ -452,23 +411,15 @@ async function initUI() {
       return;
     }
 
-    // отмена редактирования расписания
     if (t.matches("[data-action='schedule-edit-cancel'], .week-cancel")) {
       state.scheduleEdit = null;
       await refreshScheduleEditor();
       return;
     }
 
-    // назад из расписания в дашборд
     if (t.matches("[data-action='back-to-dashboard'], [data-action='back-to-dashboard-2']")) {
       switchView("dashboard");
       return;
     }
   });
-
-  setInterval(() => {
-    SyncService.pollUpdates().catch(e => console.warn("[events] pollUpdates failed", e));
-  }, 30000);
 }
-
-export { initUI };
