@@ -19,6 +19,9 @@ function initData() {
   return (window.Telegram?.WebApp?.initData || "") + "";
 }
 
+function getDeviceId() {
+  let id = localStorage.getItem("planner.deviceId");
+  if (!id) { id = "dev_" + Math.random().toString(36).slice(2); localStorage.setItem("planner.deviceId", id); }
   return id;
 }
 

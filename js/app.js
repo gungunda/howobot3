@@ -23,7 +23,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   log("INF", "app", "DOM ready");
 
   // Сначала чиним deviceId (убираем "0"/пустые значения)
-  ensureDeviceId();
+  document.addEventListener("DOMContentLoaded", async () => {
+    // Чиним "0"/пустые значения сразу при старте
+    ensureDeviceId();
 
   // ВАЖНО: Storage.init() строго до любых обращений к repo
   await Storage.init();
