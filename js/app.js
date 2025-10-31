@@ -26,7 +26,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.addEventListener("DOMContentLoaded", async () => {
     // Чиним "0"/пустые значения сразу при старте
     ensureDeviceId();
-
+    uiLog.info("[deviceId] start =", getDeviceId());
+    
   // ВАЖНО: Storage.init() строго до любых обращений к repo
   await Storage.init();
   log("INF", "app", `Storage mode = ${Storage.getMode && Storage.getMode()}`);
