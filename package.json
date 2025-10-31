@@ -4,11 +4,11 @@
   "type": "module",
   "scripts": {
     "gen:api": "node tools/generate-public-api.mjs",
-    "check:api": "node tools/compare-public-api.mjs",    "api:print": "node tools/print-public-api.mjs",
-    "api:check": "node tools/check-public-api.mjs"
+    "check:api": "node tools/compare-public-api.mjs"
   },
   "dependencies": {
-    "@vercel/kv": "latest"
+    "@vercel/kv": "^3.0.0",
+    "redis": "^5.9.0"
   },
   "devDependencies": {
     "acorn": "^8.15.0",
