@@ -1,124 +1,53 @@
 // js/app.js
-//
-// Точка входа приложения.
-//
-// Порядок инициализации:
-// 1) DOMContentLoaded
-// 2) setupDebugLog() — подключаем UI-логгер к нижней панели <pre id="debug-log">
-// 3) await Storage.init() — определяем режим хранения (local / cloud)
-// 4) await SyncService.pullBootstrap() — подтягиваем свежие данные с сервера (если доступно)
-// 5) initUI() — строим интерфейс
-//
-// Зачем нужен setupDebugLog:
-//  - В Telegram WebView нет DevTools. Поэтому мы дублируем console.* в нижнюю панель.
-//  - Многие модули проекта зовут window.debugLog(...). Раньше он мог быть не определён.
-//    Теперь мы гарантируем его наличие.
+// Точка входа. Порядок:
+// 1) Storage.init()
+// 2) pullBootstrap() — пинг API (для логов)
+// 3) pullFreshScheduleOnStart() — подтянуть серверное расписание в локалку
+// 4) initUI()
+// 5) startPolling(30s) — периодически тянуть обновления (schedule + overrides)
 
 import { Storage } from "./infra/telegramEnv.js";
+import SyncService, { startPolling } from "./sync/syncService.js";
 import { initUI } from "./ui/events.js";
-import SyncService from "./sync/syncService.js";
 
-/**
- * setupDebugLog()
- * Склеивает console.log/warn/error с панелью <pre id="debug-log"> (если она есть).
- * Дополнительно создаёт window.debugLog(...), чтобы модули могли писать туда напрямую.
- *
- * Важно: не используем никаких внешних зависимостей и не меняем разметку.
- */
 function setupDebugLog() {
-  // Не инициализируем повторно.
-  if (typeof window !== "undefined" && window.__debugLogInited__) return;
-
-  function stringify(arg) {
-    if (arg == null) return String(arg);
-    if (typeof arg === "string") return arg;
-    if (arg instanceof Error) return arg.stack || arg.message || String(arg);
+  const el = document.getElementById("debug-log");
+  if (!el) return;
+  const orig = { log: console.log, info: console.info, warn: console.warn, error: console.error };
+  function append(level, args) {
     try {
-      return JSON.stringify(arg);
-    } catch {
-      try { return String(arg); } catch { return "[unprintable]"; }
-    }
+      const ts = new Date().toTimeString().split(" ")[0] + "." + String(performance.now().toFixed(0)).slice(-3);
+      const line = `[${level}] ${ts} ${args.map(x => {
+        if (typeof x === "string") return x;
+        try { return JSON.stringify(x); } catch { return String(x); }
+      }).join(" ")}`;
+      el.textContent += (el.textContent ? "\n" : "") + line;
+      el.scrollTop = el.scrollHeight;
+    } catch {}
   }
-
-  function getLogEl() {
-    return document.getElementById("debug-log");
-  }
-
-  function appendLine(prefix, args) {
-    const el = getLogEl();
-    if (!el) return; // если панели нет — тихо выходим
-    const ts = new Date().toISOString().substring(11, 23); // HH:MM:SS.mmm
-    const line = (prefix ? prefix + " " : "") + ts + " " + args.map(stringify).join(" ");
-    el.textContent += line + "\n";
-    const shell = el.parentElement;
-    if (shell && typeof shell.scrollTop === "number") {
-      shell.scrollTop = shell.scrollHeight;
-    }
-  }
-
-  // Публичный хук для модулей проекта
-  window.debugLog = (...args) => appendLine("[DBG]", args);
-
-  // Проксируем console.*: сначала оригинал, затем в панель
-  const orig = {
-    log:   console.log.bind(console),
-    warn:  console.warn.bind(console),
-    error: console.error.bind(console),
-    info:  (console.info  ? console.info.bind(console)  : console.log.bind(console)),
-    debug: (console.debug ? console.debug.bind(console) : console.log.bind(console)),
-  };
-
-  console.log = (...args)   => { orig.log(...args);   appendLine("[LOG]", args); };
-  console.warn = (...args)  => { orig.warn(...args);  appendLine("[WRN]", args); };
-  console.error = (...args) => { orig.error(...args); appendLine("[ERR]", args); };
-  console.info = (...args)  => { orig.info(...args);  appendLine("[INF]", args); };
-  console.debug = (...args) => { orig.debug(...args); appendLine("[DBG]", args); };
-
-  window.__debugLogInited__ = true;
-  appendLine("[INF]", ["[app] UI logger attached"]);
-}
-
-/**
- * setFooterMode(mode)
- * Короткая подсказка внизу: “локальный режим” / “облачный режим (Telegram)”.
- * Не обязательна для работы — это чисто UX-пометка.
- */
-function setFooterMode(mode) {
-  try {
-    const f = document.querySelector("footer.footer");
-    if (!f) return;
-    const m = (mode === "cloud") ? "облачный режим (Telegram)"
-            : (mode === "local") ? "локальный режим"
-            : String(mode || "неизвестный режим");
-    f.textContent = `Лёшин планировщик · ${m}`;
-  } catch (_) {}
+  console.log = (...a) => { append("LOG", a); orig.log(...a); };
+  console.info = (...a) => { append("INF", a); orig.info(...a); };
+  console.warn = (...a) => { append("WRN", a); orig.warn(...a); };
+  console.error = (...a) => { append("ERR", a); orig.error(...a); };
+  console.info("[app] UI logger attached");
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // 1) Логгер — до любых init, чтобы поймать все сообщения
   setupDebugLog();
   console.info("[app] DOM ready");
 
-  // Пояснение окружения (виден ли Telegram.WebApp)
-  const isTG = !!(window?.Telegram?.WebApp);
-  const tgVer = isTG ? window.Telegram.WebApp.version : "n/a";
-  console.info("[app] Telegram WebApp visible =", isTG, "version =", tgVer);
-
-  // 2) Инициализация Storage (определяем режим: local / cloud)
-  await Storage.init();
-  const mode = (typeof Storage.getMode === "function") ? Storage.getMode() : "unknown";
-  console.info("[app] Storage mode =", mode);
-  setFooterMode(mode);
-
-  // 3) Bootstrap-синхронизация с нашим сервером (Vercel), если доступно.
-  //    Ошибки — не критичны, приложение должно работать офлайн.
   try {
-    await SyncService.pullBootstrap();
-    console.info("[app] pullBootstrap: OK");
-  } catch (e) {
-    console.warn("[app] pullBootstrap failed, continue offline:", e);
-  }
+    await Storage.init();
+    console.info("[app] Storage mode = " + Storage.getMode());
 
-  // 4) Запуск UI
-  initUI();
+    await SyncService.pullBootstrap();
+    await SyncService.pullFreshScheduleOnStart();
+
+    await initUI();
+
+    // Включаем фоновые обновления каждые 30 сек
+    startPolling(30000);
+  } catch (e) {
+    console.error("[app] init failed:", e);
+  }
 });

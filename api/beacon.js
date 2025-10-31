@@ -11,13 +11,14 @@ function userKey(initData) {
 
 export default async function handler(req) {
   try {
-    const { initData, dateKey } = await req.json().catch(() => ({}));
+    const { initData } = await req.json().catch(() => ({}));
     const uk = userKey(initData);
-    if (!uk || !dateKey) return bad({ ok: false, error: "bad_payload" });
+    if (!uk) return bad({ ok: false, error: "bad_init_data" });
 
-    const override = await kv.get(`${uk}:override:${dateKey}`);
-    const meta = await kv.get(`${uk}:override:${dateKey}:meta`);
-    return ok({ ok: true, override: override || null, meta: meta || null });
+    const beaconKey = `${uk}:beacon`;
+    let beacon = await kv.get(beaconKey);
+    if (!beacon) beacon = { updatedAt: null, deviceId: null };
+    return ok({ ok: true, ...beacon });
   } catch (e) {
     return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
   }

@@ -1,32 +1,31 @@
-const { json, parseInitData, getSnapshot } = require("./_utils.js");
-const { json: _json } = require("./_utils.js");
+export const config = { runtime: "edge" };
+import { kv } from '@vercel/kv';
 
-async function readPayload(req) {
-  if (req.body && typeof req.body === "object") return req.body;
-  if (typeof req.body === "string") { try { return JSON.parse(req.body); } catch { return {}; } }
-  let data = ""; return await new Promise((resolve) => {
-    req.setEncoding("utf8");
-    req.on("data", (c) => data += c);
-    req.on("end", () => { try { resolve(data ? JSON.parse(data) : {}); } catch { resolve({}); } });
-    req.on("error", () => resolve({}));
-  });
+function bad(res) { return new Response(JSON.stringify(res), { status: 400, headers: { "content-type": "application/json" } }); }
+function ok(res) { return new Response(JSON.stringify(res), { status: 200, headers: { "content-type": "application/json" } }); }
+
+function userKey(initData) {
+  if (!initData || typeof initData !== "string") return null;
+  return "u:" + btoa(unescape(encodeURIComponent(initData))).slice(0, 24);
 }
 
-module.exports = async function handler(req, res) {
-  if (req.method !== "POST") {
-    const r = _json({ ok:false, error:"method_not_allowed" }, 405);
-    res.status(r.status).setHeader("content-type", r.headers["content-type"]).send(r.body); return;
-  }
-  const payload = await readPayload(req);
+export default async function handler(req) {
+  try {
+    const { initData } = await req.json().catch(() => ({}));
+    const uk = userKey(initData);
+    if (!uk) return bad({ ok: false, error: "bad_init_data" });
 
-  const parsed = parseInitData(payload?.initData);
-  const snap = await getSnapshot(parsed.userId);
-  const scheduleMeta = snap.schedule?.meta || null;
-  const overridesMeta = {};
-  const ov = snap.overrides || {};
-  for (const [dateKey, val] of Object.entries(ov)) {
-    overridesMeta[dateKey] = { updatedAt: val?.meta?.updatedAt || null };
+    const scheduleMeta = (await kv.get(`${uk}:schedule:meta`)) || null;
+    const dates = await kv.smembers(`${uk}:override:index`).catch(() => []);
+    const overridesMeta = {};
+    if (Array.isArray(dates)) {
+      for (const d of dates) {
+        const m = await kv.get(`${uk}:override:${d}:meta`);
+        if (m) overridesMeta[d] = m;
+      }
+    }
+    return ok({ ok: true, scheduleMeta, overridesMeta });
+  } catch (e) {
+    return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
   }
-  const r = json({ ok:true, schedule: scheduleMeta, overrides: overridesMeta });
-  res.status(r.status).setHeader("content-type", r.headers["content-type"]).send(r.body);
-};
+}

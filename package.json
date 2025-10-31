@@ -1,6 +1,8 @@
 {
+  "name": "leshin-planner-sync",
+  "private": true,
+  "type": "module",
   "dependencies": {
-    "@vercel/kv": "^3.0.0",
-    "redis": "^5.9.0"
+    "@vercel/kv": "latest"
   }
 }
