@@ -53,7 +53,7 @@ export async function exportSnapshot() {
 
   return {
     version: "1.0",
-    deviceId: DeviceId.get(),
+    deviceId: getDeviceId(),
     exportedAt: new Date().toISOString(),
     schedule,
     overridesByDate

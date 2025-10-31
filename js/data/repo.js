@@ -21,7 +21,7 @@ function touchMeta(oldMeta, actionHint) {
   const base = (oldMeta && typeof oldMeta === "object") ? { ...oldMeta } : {};
   if (!base.createdAt) base.createdAt = nowIso();
   base.updatedAt = nowIso();
-  base.deviceId = DeviceId.get();
+  base.deviceId = getDeviceId();
   if (actionHint) base.userAction = String(actionHint);
   return base;
 }
