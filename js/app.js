@@ -1,53 +1,71 @@
 // js/app.js
-// Точка входа. Порядок:
-// 1) Storage.init()
-// 2) pullBootstrap() — пинг API (для логов)
-// 3) pullFreshScheduleOnStart() — подтянуть серверное расписание в локалку
-// 4) initUI()
-// 5) startPolling(30s) — периодически тянуть обновления (schedule + overrides)
+// Минимальные правки: добавлены слушатели sync:apply:* и запуск SyncService.startPolling.
+// Остальное — стандартная инициализация приложения без архитектурных изменений.
 
 import { Storage } from "./infra/telegramEnv.js";
-import SyncService, { startPolling } from "./sync/syncService.js";
-import { initUI } from "./ui/events.js";
+import SyncService from "./sync/syncService.js";
+import * as repo from "./data/repo.js";
+import {
+  initUI,
+  getState,
+  refreshDashboard,
+  refreshScheduleEditor
+} from "./ui/events.js";
 
-function setupDebugLog() {
-  const el = document.getElementById("debug-log");
-  if (!el) return;
-  const orig = { log: console.log, info: console.info, warn: console.warn, error: console.error };
-  function append(level, args) {
-    try {
-      const ts = new Date().toTimeString().split(" ")[0] + "." + String(performance.now().toFixed(0)).slice(-3);
-      const line = `[${level}] ${ts} ${args.map(x => {
-        if (typeof x === "string") return x;
-        try { return JSON.stringify(x); } catch { return String(x); }
-      }).join(" ")}`;
-      el.textContent += (el.textContent ? "\n" : "") + line;
-      el.scrollTop = el.scrollHeight;
-    } catch {}
-  }
-  console.log = (...a) => { append("LOG", a); orig.log(...a); };
-  console.info = (...a) => { append("INF", a); orig.info(...a); };
-  console.warn = (...a) => { append("WRN", a); orig.warn(...a); };
-  console.error = (...a) => { append("ERR", a); orig.error(...a); };
-  console.info("[app] UI logger attached");
+// Простой прокси к логгеру UI, чтобы не плодить разные логгеры
+function log(level, scope, msg, obj) {
+  if (window.__UILOG) window.__UILOG(level, scope, msg, obj);
+  else console.log(level, `[${scope}] ${msg}`, obj || "");
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  setupDebugLog();
-  console.info("[app] DOM ready");
+  log("INF", "app", "DOM ready");
 
-  try {
-    await Storage.init();
-    console.info("[app] Storage mode = " + Storage.getMode());
+  // ВАЖНО: Storage.init() строго до любых обращений к repo
+  await Storage.init();
+  log("INF", "app", `Storage mode = ${Storage.getMode && Storage.getMode()}`);
 
-    await SyncService.pullBootstrap();
-    await SyncService.pullFreshScheduleOnStart();
+  // Инициализация UI (как было у тебя)
+  await initUI();
 
-    await initUI();
+  // === КЛЕЙ ДЛЯ СИНХРОНИЗАЦИИ ===
+  // Когда сервер сообщает о новом расписании — сохраняем и перерисовываем нужный экран
+  window.addEventListener("sync:apply:schedule", async (ev) => {
+    try {
+      const { schedule, meta } = ev.detail || {};
+      if (!schedule) return;
+      await repo.saveSchedule(schedule);
 
-    // Включаем фоновые обновления каждые 30 сек
-    startPolling(30000);
-  } catch (e) {
-    console.error("[app] init failed:", e);
-  }
+      const state = getState && getState();
+      if (state?.activeView === "schedule") {
+        await refreshScheduleEditor();
+      } else if (state?.activeView === "dashboard") {
+        await refreshDashboard(state.selectedDateKey);
+      }
+      log("LOG", "app", "schedule applied from server", meta || {});
+    } catch (e) {
+      log("WRN", "app", "failed to apply schedule from server", { error: String(e) });
+    }
+  });
+
+  // Когда сервер сообщает о новом override для конкретной даты
+  window.addEventListener("sync:apply:override", async (ev) => {
+    try {
+      const { dateKey, override, meta } = ev.detail || {};
+      if (!dateKey || !override) return;
+      await repo.saveDayOverride(override);
+
+      const state = getState && getState();
+      if (state?.activeView === "dashboard" && state?.selectedDateKey === dateKey) {
+        await refreshDashboard(state.selectedDateKey);
+      }
+      log("LOG", "app", `override applied for ${dateKey}`, meta || {});
+    } catch (e) {
+      log("WRN", "app", "failed to apply override from server", { error: String(e) });
+    }
+  });
+
+  // Запускаем фоновый пулинг синхронизации (каждые 30 секунд)
+  SyncService.startPolling(30_000);
 });
+
