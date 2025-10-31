@@ -1,0 +1,355 @@
+{
+  "js/app.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/data/repo.js": {
+    "functions": [
+      {
+        "name": "loadSchedule",
+        "params": []
+      },
+      {
+        "name": "saveSchedule",
+        "params": [
+          "scheduleObj",
+          "actionHint"
+        ]
+      },
+      {
+        "name": "loadDayOverride",
+        "params": [
+          "dateKey"
+        ]
+      },
+      {
+        "name": "saveDayOverride",
+        "params": [
+          "dayObj",
+          "actionHint"
+        ]
+      },
+      {
+        "name": "listOverrideDates",
+        "params": []
+      },
+      {
+        "name": "startInlineEditTaskForDate",
+        "params": [
+          "dateKey",
+          "taskId"
+        ]
+      },
+      {
+        "name": "finishInlineEditTaskForDate",
+        "params": [
+          "dateKey"
+        ]
+      },
+      {
+        "name": "getInlineEditStateForDate",
+        "params": [
+          "dateKey"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/domain/entities.js": {
+    "functions": [
+      {
+        "name": "toDateKey",
+        "params": [
+          "dateObj"
+        ]
+      },
+      {
+        "name": "addDaysToDateKey",
+        "params": [
+          "dateKey",
+          "n"
+        ]
+      },
+      {
+        "name": "weekdayKeyFromDateKey",
+        "params": [
+          "dateKey"
+        ]
+      },
+      {
+        "name": "clampPercent",
+        "params": [
+          "x"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": [
+      {
+        "name": "Task"
+      },
+      {
+        "name": "DayOverride"
+      },
+      {
+        "name": "Schedule"
+      }
+    ]
+  },
+  "js/domain/id.js": {
+    "functions": [],
+    "variables": [
+      {
+        "name": "DeviceId"
+      }
+    ],
+    "classes": []
+  },
+  "js/infra/telegramEnv.js": {
+    "functions": [
+      {
+        "name": "init",
+        "params": []
+      },
+      {
+        "name": "getMode",
+        "params": []
+      },
+      {
+        "name": "getItem",
+        "params": [
+          "key"
+        ]
+      },
+      {
+        "name": "setItem",
+        "params": [
+          "key",
+          "value"
+        ]
+      },
+      {
+        "name": "getKeys",
+        "params": []
+      }
+    ],
+    "variables": [
+      {
+        "name": "Storage"
+      }
+    ],
+    "classes": []
+  },
+  "js/ports/override-repo.port.js": {
+    "functions": [],
+    "variables": [],
+    "classes": [
+      {
+        "name": "OverrideRepositoryPort"
+      }
+    ]
+  },
+  "js/ports/schedule-repo.port.js": {
+    "functions": [],
+    "variables": [],
+    "classes": [
+      {
+        "name": "ScheduleRepositoryPort"
+      }
+    ]
+  },
+  "js/snapshot/export.js": {
+    "functions": [
+      {
+        "name": "exportSnapshot",
+        "params": []
+      },
+      {
+        "name": "importSnapshot",
+        "params": [
+          "snapshot"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/state.js": {
+    "functions": [
+      {
+        "name": "getState",
+        "params": []
+      },
+      {
+        "name": "setState",
+        "params": [
+          "param"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/sync/syncService.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/ui/events.js": {
+    "functions": [
+      {
+        "name": "initUI",
+        "params": []
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/ui/view-calendar.js": {
+    "functions": [
+      {
+        "name": "updateCalendarView",
+        "params": [
+          "state"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/ui/view-dashboard.js": {
+    "functions": [
+      {
+        "name": "updateDashboardView",
+        "params": [
+          "model"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/ui/view-schedule.js": {
+    "functions": [
+      {
+        "name": "updateScheduleView",
+        "params": [
+          "state"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/addTaskToSchedule.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/adjustTaskPercentForDate.js": {
+    "functions": [
+      {
+        "name": "adjustTaskPercentForDate",
+        "params": [
+          "param"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/deleteTaskFromSchedule.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/editTaskInline.js": {
+    "functions": [
+      {
+        "name": "editTaskInline",
+        "params": [
+          "param"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/editTaskInSchedule.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/ensureTaskInOverrideForDate.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/forceCreateOverrideFromSchedule.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/gcOldDates.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/resetToSchedule.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/setupSyncTriggers.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/syncNow.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/usecases/toggleTaskDoneForDate.js": {
+    "functions": [],
+    "variables": [],
+    "classes": []
+  },
+  "js/utils/date-utils.js": {
+    "functions": [
+      {
+        "name": "addDays",
+        "params": [
+          "date",
+          "n"
+        ]
+      }
+    ],
+    "variables": [],
+    "classes": []
+  },
+  "js/utils/format-utils.js": {
+    "functions": [
+      {
+        "name": "minutesToStr",
+        "params": [
+          "min"
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "name": "clamp"
+      },
+      {
+        "name": "clampPct"
+      },
+      {
+        "name": "sum"
+      }
+    ],
+    "classes": []
+  }
+}

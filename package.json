@@ -2,7 +2,16 @@
   "name": "leshin-planner-sync",
   "private": true,
   "type": "module",
+  "scripts": {
+    "gen:api": "node tools/generate-public-api.mjs",
+    "check:api": "node tools/compare-public-api.mjs",    "api:print": "node tools/print-public-api.mjs",
+    "api:check": "node tools/check-public-api.mjs"
+  },
   "dependencies": {
     "@vercel/kv": "latest"
+  },
+  "devDependencies": {
+    "acorn": "^8.15.0",
+    "acorn-walk": "^8.3.4"
   }
 }

@@ -1,3 +1,9 @@
+// js/sync/syncService.js
+// Использует js/infra/deviceId.js как единственный источник deviceId.
+// Без генераторов внутри — строгое следование плану.
+
+import { get as getDeviceId } from "../infra/deviceId.js";
+
 const LS = {
   get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return localStorage.getItem(k); } },
   set(k,v){ localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v)); }
@@ -17,12 +23,6 @@ function isNewer(serverTs, localTs){
 
 function initData() {
   return (window.Telegram?.WebApp?.initData || "") + "";
-}
-
-function deviceId() {
-  let id = localStorage.getItem("planner.deviceId");
-  if (!id) { id = "dev_" + Math.random().toString(36).slice(2); localStorage.setItem("planner.deviceId", id); }
-  return id;
 }
 
 function log(level, scope, msg, obj){
@@ -79,7 +79,7 @@ const SyncService = {
       const json = await post("/api/writeSchedule", {
         initData: initData(),
         schedule: scheduleObj,
-        clientMeta: { updatedAt: new Date().toISOString(), deviceId: deviceId() }
+        clientMeta: { updatedAt: new Date().toISOString(), deviceId: getDeviceId() }
       });
       if (json?.ok && json?.applied && json?.serverMeta?.updatedAt){
         LS.set(SYNC_KEYS.scheduleApplied, json.serverMeta.updatedAt);
@@ -99,7 +99,7 @@ const SyncService = {
         initData: initData(),
         dateKey,
         override: overrideObj,
-        clientMeta: { updatedAt: new Date().toISOString(), deviceId: deviceId() }
+        clientMeta: { updatedAt: new Date().toISOString(), deviceId: getDeviceId() }
       });
       if (json?.ok && json?.applied && json?.serverMeta?.updatedAt){
         LS.set(SYNC_KEYS.overrideAppliedPrefix + dateKey, json.serverMeta.updatedAt);

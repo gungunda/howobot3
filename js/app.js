@@ -11,6 +11,8 @@ import {
   refreshDashboard,
   refreshScheduleEditor
 } from "./ui/events.js";
+import { ensure as ensureDeviceId } from "./js/infra/deviceId.js";
+ensureDeviceId(); 
 
 // Простой прокси к логгеру UI, чтобы не плодить разные логгеры
 function log(level, scope, msg, obj) {
