@@ -1,9 +1,3 @@
-// js/sync/syncService.js
-// Использует js/infra/deviceId.js как единственный источник deviceId.
-// Без генераторов внутри — строгое следование плану.
-
-import { get as getDeviceId } from "../infra/deviceId.js";
-
 const LS = {
   get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return localStorage.getItem(k); } },
   set(k,v){ localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v)); }
@@ -23,6 +17,9 @@ function isNewer(serverTs, localTs){
 
 function initData() {
   return (window.Telegram?.WebApp?.initData || "") + "";
+}
+
+  return id;
 }
 
 function log(level, scope, msg, obj){

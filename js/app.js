@@ -4,6 +4,7 @@
 
 import { Storage } from "./infra/telegramEnv.js";
 import SyncService from "./sync/syncService.js";
+import { ensure as ensureDeviceId } from "./infra/deviceId.js";
 import * as repo from "./data/repo.js";
 import {
   initUI,
@@ -11,8 +12,6 @@ import {
   refreshDashboard,
   refreshScheduleEditor
 } from "./ui/events.js";
-import { ensure as ensureDeviceId } from "./js/infra/deviceId.js";
-ensureDeviceId(); 
 
 // Простой прокси к логгеру UI, чтобы не плодить разные логгеры
 function log(level, scope, msg, obj) {
@@ -22,6 +21,9 @@ function log(level, scope, msg, obj) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   log("INF", "app", "DOM ready");
+
+  // Сначала чиним deviceId (убираем "0"/пустые значения)
+  ensureDeviceId();
 
   // ВАЖНО: Storage.init() строго до любых обращений к repo
   await Storage.init();
@@ -70,4 +72,5 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Запускаем фоновый пулинг синхронизации (каждые 30 секунд)
   SyncService.startPolling(30_000);
 });
+
 
