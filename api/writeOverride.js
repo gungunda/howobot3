@@ -1,33 +1,37 @@
-export const config = { runtime: "edge" };
-import { kv } from '@vercel/kv';
+// api/writeOverride.js — запись override + индекс + маяк (Node)
 
-function bad(res) { return new Response(JSON.stringify(res), { status: 400, headers: { "content-type": "application/json" } }); }
-function ok(res) { return new Response(JSON.stringify(res), { status: 200, headers: { "content-type": "application/json" } }); }
+import { kv } from "@vercel/kv";
+import { ok, badRequest, serverError, readJsonBody, resolveInitData, userKey, KEYS } from "./_utils.js";
 
-function userKey(initData) {
-  if (!initData || typeof initData !== "string") return null;
-  return "u:" + btoa(unescape(encodeURIComponent(initData))).slice(0, 24);
-}
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   try {
-    const { initData, dateKey, override, clientMeta } = await req.json().catch(() => ({}));
+    if (req.method !== "POST") return badRequest(res, "method_not_allowed");
+
+    const initData = await resolveInitData(req);
     const uk = userKey(initData);
-    if (!uk || !dateKey || !override || typeof override !== "object") {
-      return bad({ ok: false, error: "bad_payload" });
+    if (!uk) return badRequest(res, "bad_init_data");
+
+    const body = await readJsonBody(req).catch(() => ({}));
+    const dateKey = body?.dateKey;
+    const override = body?.override;
+    const clientMeta = body?.clientMeta || {};
+
+    if (!dateKey || !override || typeof override !== "object") {
+      return badRequest(res, "bad_payload");
     }
 
-    const now = new Date().toISOString();
-    const serverMeta = { updatedAt: now, deviceId: clientMeta?.deviceId || null };
+    const serverMeta = {
+      updatedAt: new Date().toISOString(),
+      deviceId: typeof clientMeta.deviceId === "string" ? clientMeta.deviceId : null
+    };
 
-    await kv.set(`${uk}:override:${dateKey}`, override);
-    await kv.set(`${uk}:override:${dateKey}:meta`, serverMeta);
-    await kv.sadd(`${uk}:override:index`, dateKey);
+    await kv.set(KEYS.override(uk, dateKey), override);
+    await kv.set(KEYS.overrideMeta(uk, dateKey), serverMeta);
+    await kv.sadd(KEYS.overrideIndex(uk), dateKey);
+    await kv.set(KEYS.beacon(uk), serverMeta);
 
-    await kv.set(`${uk}:beacon`, serverMeta);
-
-    return ok({ ok: true, applied: true, serverMeta });
+    return ok(res, { applied: true, serverMeta });
   } catch (e) {
-    return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
+    return serverError(res, e);
   }
 }

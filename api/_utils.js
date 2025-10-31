@@ -1,112 +1,72 @@
-const { createClient } = require("redis");
+// api/_utils.js — общие утилиты для Node.js Serverless (Vercel)
 
-let _redis = null;
-
-async function getRedis() {
-  if (_redis && _redis.isOpen) return _redis;
-  const url = process.env.REDIS_URL;
-  if (!url) throw new Error("REDIS_URL is not set");
-  _redis = createClient({ url });
-  _redis.on("error", (err) => console.error("[redis] error:", err?.message || err));
-  await _redis.connect();
-  return _redis;
+// Ответ JSON
+export function sendJson(res, status, data) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(data));
 }
 
-function json(data, status = 200) {
-  return {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8" },
-    body: JSON.stringify(data)
-  };
+export function ok(res, data = {}) {
+  sendJson(res, 200, { ok: true, ...data });
 }
 
-// Пока подставляем стабильный userId для тестов.
-// Позже сюда добавим реальную валидацию Telegram initData.
-function parseInitData(initData) {
-  return { userId: "demo-user" };
+export function badRequest(res, error = "bad_request", extra) {
+  sendJson(res, 400, { ok: false, error, ...(extra || {}) });
 }
 
-function keySchedule(uid)     { return `${uid}:schedule`; }
-function keyScheduleMeta(uid) { return `${uid}:schedule:meta`; }
-function keyOverride(uid,d)   { return `${uid}:ov:${d}`; }
-function keyOvIndex(uid)      { return `${uid}:ov:index`; }
-
-async function getJSON(key) {
-  const r = await (await getRedis()).get(key);
-  if (r == null) return null;
-  try { return JSON.parse(r); } catch { return null; }
-}
-async function setJSON(key, val) {
-  const s = JSON.stringify(val);
-  await (await getRedis()).set(key, s);
+export function serverError(res, e) {
+  const msg = typeof e === "string" ? e : (e?.message || String(e));
+  sendJson(res, 500, { ok: false, error: msg });
 }
 
-function resolveByUpdatedAt(serverMeta, clientMeta) {
-  const s = serverMeta?.updatedAt || null;
-  const c = clientMeta?.updatedAt || null;
-  if (!s && c) return "client";
-  if (s && !c) return "server";
-  if (!s && !c) return "client";
-  return c > s ? "client" : "server";
-}
-
-async function getSnapshot(uid) {
-  const r = await getRedis();
-  const [sched, meta, indexStr] = await r.mGet([keySchedule(uid), keyScheduleMeta(uid), keyOvIndex(uid)]);
-  const schedule = sched ? { schedule: JSON.parse(sched), meta: (meta ? JSON.parse(meta) : null) } : null;
-  const overrides = {};
-  const index = indexStr ? JSON.parse(indexStr) : [];
-  if (Array.isArray(index) && index.length) {
-    const keys = index.map((d) => keyOverride(uid, d));
-    const vals = await r.mGet(keys);
-    vals.forEach((raw, i) => {
-      if (raw) {
-        const dateKey = index[i];
-        overrides[dateKey] = JSON.parse(raw);
-      }
-    });
+export async function readJsonBody(req) {
+  try {
+    const chunks = [];
+    for await (const ch of req) chunks.push(ch);
+    if (!chunks.length) return null;
+    const txt = Buffer.concat(chunks).toString("utf8");
+    return JSON.parse(txt);
+  } catch {
+    throw new Error("invalid_json");
   }
-  return { schedule, overrides };
 }
 
-async function putSchedule(uid, schedule, meta) {
-  const r = await getRedis();
-  await r.mSet({
-    [keySchedule(uid)]: JSON.stringify(schedule),
-    [keyScheduleMeta(uid)]: JSON.stringify(meta || { updatedAt: new Date().toISOString(), deviceId: "unknown" })
-  });
+// base64 по UTF‑8 (совместимо с btoa(unescape(encodeURIComponent(...))))
+export function toBase64Utf8(str) {
+  return Buffer.from(String(str), "utf8").toString("base64");
 }
 
-async function getSchedule(uid) {
-  const r = await getRedis();
-  const [sched, meta] = await r.mGet([keySchedule(uid), keyScheduleMeta(uid)]);
-  if (!sched) return null;
-  return { schedule: JSON.parse(sched), meta: meta ? JSON.parse(meta) : null };
+// userKey: «u:<base64(…)>» урезанный до 24 символов для компактности
+export function userKey(initData) {
+  if (!initData || typeof initData !== "string") return null;
+  return "u:" + toBase64Utf8(initData).slice(0, 24);
 }
 
-async function getOverride(uid, dateKey) {
-  return await getJSON(keyOverride(uid, dateKey));
-}
-
-async function putOverride(uid, dateKey, override) {
-  const r = await getRedis();
-  const idxKey = keyOvIndex(uid);
-  const idxRaw = await r.get(idxKey);
-  const index = idxRaw ? JSON.parse(idxRaw) : [];
-  if (!index.includes(dateKey)) {
-    index.push(dateKey);
-    await r.set(idxKey, JSON.stringify(index));
+// Параметр ?initData=... из URL (для GET)
+export function getQueryParam(req, name) {
+  try {
+    const url = new URL(req.url, "http://localhost");
+    return url.searchParams.get(name);
+  } catch {
+    return null;
   }
-  await setJSON(keyOverride(uid, dateKey), override);
 }
 
-module.exports = {
-  json,
-  parseInitData,
-  resolveByUpdatedAt,
-  getSnapshot,
-  putSchedule,
-  getSchedule,
-  getOverride,
-  putOverride
+// Достаём initData: сначала query (?initData=), затем JSON‑тело
+export async function resolveInitData(req) {
+  const fromQuery = getQueryParam(req, "initData");
+  if (fromQuery) return fromQuery;
+  const body = await readJsonBody(req).catch(() => null);
+  return body?.initData || null;
+}
+
+// Ключи в KV/Redis для namespace пользователя
+export const KEYS = {
+  schedule: (uk) => `${uk}:schedule`,
+  scheduleMeta: (uk) => `${uk}:schedule:meta`,
+  override: (uk, d) => `${uk}:override:${d}`,
+  overrideMeta: (uk, d) => `${uk}:override:${d}:meta`,
+  overrideIndex: (uk) => `${uk}:override:index`,
+  beacon: (uk) => `${uk}:beacon`
 };

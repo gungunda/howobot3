@@ -1,24 +1,19 @@
-export const config = { runtime: "edge" };
-import { kv } from '@vercel/kv';
+// api/readSchedule.js — чтение расписания и его меты (Node)
 
-function bad(res) { return new Response(JSON.stringify(res), { status: 400, headers: { "content-type": "application/json" } }); }
-function ok(res) { return new Response(JSON.stringify(res), { status: 200, headers: { "content-type": "application/json" } }); }
+import { kv } from "@vercel/kv";
+import { ok, badRequest, serverError, resolveInitData, userKey, KEYS } from "./_utils.js";
 
-function userKey(initData) {
-  if (!initData || typeof initData !== "string") return null;
-  return "u:" + btoa(unescape(encodeURIComponent(initData))).slice(0, 24);
-}
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   try {
-    const { initData } = await req.json().catch(() => ({}));
+    const initData = await resolveInitData(req);
     const uk = userKey(initData);
-    if (!uk) return bad({ ok: false, error: "bad_init_data" });
+    if (!uk) return badRequest(res, "bad_init_data");
 
-    const schedule = await kv.get(`${uk}:schedule`);
-    const meta = await kv.get(`${uk}:schedule:meta`);
-    return ok({ ok: true, schedule: schedule || null, meta: meta || null });
+    const schedule = await kv.get(KEYS.schedule(uk));
+    const meta = await kv.get(KEYS.scheduleMeta(uk));
+
+    return ok(res, { schedule: schedule || null, meta: meta || null });
   } catch (e) {
-    return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
+    return serverError(res, e);
   }
 }

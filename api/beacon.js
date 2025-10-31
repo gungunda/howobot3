@@ -1,25 +1,59 @@
-export const config = { runtime: "edge" };
-import { kv } from '@vercel/kv';
+// api/beacon.js  (пример: Node.js serverless function на Vercel)
 
-function bad(res) { return new Response(JSON.stringify(res), { status: 400, headers: { "content-type": "application/json" } }); }
-function ok(res) { return new Response(JSON.stringify(res), { status: 200, headers: { "content-type": "application/json" } }); }
+import { kv } from "@vercel/kv";
 
-function userKey(initData) {
-  if (!initData || typeof initData !== "string") return null;
-  return "u:" + btoa(unescape(encodeURIComponent(initData))).slice(0, 24);
+// Универсальные helpers для ответов JSON в Node-функции
+function sendJson(res, status, data) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(data));
+}
+const ok  = (res, data = {}) => sendJson(res, 200, { ok: true,  ...data });
+const bad = (res, error, extra) => sendJson(res, 400, { ok: false, error, ...(extra || {}) });
+const oops = (res, e) => sendJson(res, 500, { ok: false, error: String(e?.message || e) });
+
+// Надёжный base64 в Node
+function toBase64(str) {
+  return Buffer.from(String(str), "utf8").toString("base64");
 }
 
-export default async function handler(req) {
+// Генерация ключа пользователя по initData
+function userKey(initData) {
+  if (!initData || typeof initData !== "string") return null;
+  // короткий стабильный ключ (24 символа base64)
+  return "u:" + toBase64(initData).slice(0, 24);
+}
+
+// Прочитать JSON-тело Node-запроса (без Express)
+async function readJsonBody(req) {
+  const chunks = [];
+  for await (const ch of req) chunks.push(ch);
+  if (!chunks.length) return null;
   try {
-    const { initData } = await req.json().catch(() => ({}));
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new Error("invalid_json");
+  }
+}
+
+// Главный хендлер: (req, res) для Node-рантайма
+export default async function handler(req, res) {
+  try {
+    if (req.method !== "POST") {
+      return bad(res, "method_not_allowed");
+    }
+
+    const body = await readJsonBody(req);
+    const initData = body?.initData;
     const uk = userKey(initData);
-    if (!uk) return bad({ ok: false, error: "bad_init_data" });
+    if (!uk) return bad(res, "bad_init_data");
 
     const beaconKey = `${uk}:beacon`;
     let beacon = await kv.get(beaconKey);
     if (!beacon) beacon = { updatedAt: null, deviceId: null };
-    return ok({ ok: true, ...beacon });
+
+    return ok(res, beacon);
   } catch (e) {
-    return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
+    return oops(res, e);
   }
 }

@@ -1,30 +1,35 @@
-export const config = { runtime: "edge" };
-import { kv } from '@vercel/kv';
+// api/writeSchedule.js — запись расписания + обновление маяка (Node)
 
-function bad(res) { return new Response(JSON.stringify(res), { status: 400, headers: { "content-type": "application/json" } }); }
-function ok(res) { return new Response(JSON.stringify(res), { status: 200, headers: { "content-type": "application/json" } }); }
+import { kv } from "@vercel/kv";
+import { ok, badRequest, serverError, readJsonBody, resolveInitData, userKey, KEYS } from "./_utils.js";
 
-function userKey(initData) {
-  if (!initData || typeof initData !== "string") return null;
-  return "u:" + btoa(unescape(encodeURIComponent(initData))).slice(0, 24);
-}
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   try {
-    const { initData, schedule, clientMeta } = await req.json().catch(() => ({}));
+    if (req.method !== "POST") return badRequest(res, "method_not_allowed");
+
+    const initData = await resolveInitData(req);
     const uk = userKey(initData);
-    if (!uk || !schedule || typeof schedule !== "object") return bad({ ok: false, error: "bad_payload" });
+    if (!uk) return badRequest(res, "bad_init_data");
 
-    const now = new Date().toISOString();
-    const serverMeta = { updatedAt: now, deviceId: clientMeta?.deviceId || null };
+    const body = await readJsonBody(req).catch(() => ({}));
+    const schedule = body?.schedule;
+    const clientMeta = body?.clientMeta || {};
 
-    await kv.set(`${uk}:schedule`, schedule);
-    await kv.set(`${uk}:schedule:meta`, serverMeta);
+    if (!schedule || typeof schedule !== "object") {
+      return badRequest(res, "bad_payload");
+    }
 
-    await kv.set(`${uk}:beacon`, serverMeta);
+    const serverMeta = {
+      updatedAt: new Date().toISOString(),
+      deviceId: typeof clientMeta.deviceId === "string" ? clientMeta.deviceId : null
+    };
 
-    return ok({ ok: true, applied: true, serverMeta });
+    await kv.set(KEYS.schedule(uk), schedule);
+    await kv.set(KEYS.scheduleMeta(uk), serverMeta);
+    await kv.set(KEYS.beacon(uk), serverMeta);
+
+    return ok(res, { applied: true, serverMeta });
   } catch (e) {
-    return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
+    return serverError(res, e);
   }
 }

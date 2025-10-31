@@ -1,31 +1,27 @@
-export const config = { runtime: "edge" };
-import { kv } from '@vercel/kv';
+// api/listVersions.js — версии (маяки) расписания и оверрайдов (Node)
 
-function bad(res) { return new Response(JSON.stringify(res), { status: 400, headers: { "content-type": "application/json" } }); }
-function ok(res) { return new Response(JSON.stringify(res), { status: 200, headers: { "content-type": "application/json" } }); }
+import { kv } from "@vercel/kv";
+import { ok, badRequest, serverError, resolveInitData, userKey, KEYS } from "./_utils.js";
 
-function userKey(initData) {
-  if (!initData || typeof initData !== "string") return null;
-  return "u:" + btoa(unescape(encodeURIComponent(initData))).slice(0, 24);
-}
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   try {
-    const { initData } = await req.json().catch(() => ({}));
+    const initData = await resolveInitData(req);
     const uk = userKey(initData);
-    if (!uk) return bad({ ok: false, error: "bad_init_data" });
+    if (!uk) return badRequest(res, "bad_init_data");
 
-    const scheduleMeta = (await kv.get(`${uk}:schedule:meta`)) || null;
-    const dates = await kv.smembers(`${uk}:override:index`).catch(() => []);
+    const scheduleMeta = (await kv.get(KEYS.scheduleMeta(uk))) || null;
+
+    const dates = await kv.smembers(KEYS.overrideIndex(uk)).catch(() => []);
     const overridesMeta = {};
     if (Array.isArray(dates)) {
       for (const d of dates) {
-        const m = await kv.get(`${uk}:override:${d}:meta`);
+        const m = await kv.get(KEYS.overrideMeta(uk, d));
         if (m) overridesMeta[d] = m;
       }
     }
-    return ok({ ok: true, scheduleMeta, overridesMeta });
+
+    return ok(res, { scheduleMeta, overridesMeta });
   } catch (e) {
-    return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
+    return serverError(res, e);
   }
 }

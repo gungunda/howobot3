@@ -1,24 +1,23 @@
-export const config = { runtime: "edge" };
-import { kv } from '@vercel/kv';
+// api/readOverride.js — чтение override по дате (Node)
 
-function bad(res) { return new Response(JSON.stringify(res), { status: 400, headers: { "content-type": "application/json" } }); }
-function ok(res) { return new Response(JSON.stringify(res), { status: 200, headers: { "content-type": "application/json" } }); }
+import { kv } from "@vercel/kv";
+import { ok, badRequest, serverError, readJsonBody, resolveInitData, userKey, KEYS } from "./_utils.js";
 
-function userKey(initData) {
-  if (!initData || typeof initData !== "string") return null;
-  return "u:" + btoa(unescape(encodeURIComponent(initData))).slice(0, 24);
-}
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   try {
-    const { initData, dateKey } = await req.json().catch(() => ({}));
+    const initData = await resolveInitData(req);
     const uk = userKey(initData);
-    if (!uk || !dateKey) return bad({ ok: false, error: "bad_payload" });
+    if (!uk) return badRequest(res, "bad_init_data");
 
-    const override = await kv.get(`${uk}:override:${dateKey}`);
-    const meta = await kv.get(`${uk}:override:${dateKey}:meta`);
-    return ok({ ok: true, override: override || null, meta: meta || null });
+    const body = await readJsonBody(req).catch(() => ({}));
+    const dateKey = body?.dateKey || null;
+    if (!dateKey) return badRequest(res, "bad_payload");
+
+    const override = await kv.get(KEYS.override(uk, dateKey));
+    const meta = await kv.get(KEYS.overrideMeta(uk, dateKey));
+
+    return ok(res, { override: override || null, meta: meta || null });
   } catch (e) {
-    return new Response("A server error has occurred\n\nFUNCTION_INVOCATION_FAILED\n", { status: 500 });
+    return serverError(res, e);
   }
 }
